@@ -1,0 +1,14 @@
+# Lightweight helpers only. ComfyUI owns torch/torchaudio/torchvision,
+# transformers, pydantic, NumPy and the CUDA stack.
+huggingface-hub>=0.26
+hf-xet>=1.6
+einops>=0.8
+langcodes[data]
+librosa>=0.11.0
+lingua-language-detector
+loguru
+soundfile>=0.13.1
+torchdiffeq
+PyYAML>=6.0.3
+safetensors>=0.8.0rc0
+tqdm

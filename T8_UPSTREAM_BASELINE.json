@@ -1,0 +1,15 @@
+{
+  "upstream": "https://github.com/studio-dots-ai/dots.tts",
+  "tag": "v0.3.1",
+  "commit": "09235d55005c61867d3b94aeb6e13eede919a0a3",
+  "captured_at": "2026-08-23",
+  "integration_branch": "t8-integration-v0.1",
+  "policy": {
+    "pin_upstream_code": true,
+    "pin_model_revisions": true,
+    "models_are_external": true,
+    "default_optimize": false,
+    "supported_desktop_os": ["windows-10-x64", "windows-11-x64"],
+    "supported_desktop_accelerator": "nvidia-cuda"
+  }
+}

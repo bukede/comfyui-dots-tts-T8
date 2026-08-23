@@ -1,0 +1,8 @@
+{
+  "T8_DotsTTS_ModelLoader": "发现并校验 dots.tts SOAR / MF 2-Steps 模型。",
+  "T8_DotsTTS_VoicePrompt": "封装参考音频、逐字转写和语言，用于 continuation 或 x-vector 克隆。",
+  "T8_DotsTTS_Sampling": "配置 SOAR 采样参数；固定步数模型会自动锁定官方参数。",
+  "T8_DotsTTS_Generate": "使用 dots.tts 生成标准 48 kHz ComfyUI AUDIO。",
+  "T8_DotsTTS_Environment": "只读诊断 Python、依赖、CUDA 和模型缓存。",
+  "T8_DotsTTS_Release": "释放本节点持有的模型和 CUDA 缓存。"
+}
