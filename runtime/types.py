@@ -21,6 +21,12 @@ class VoicePrompt:
 
 
 @dataclass(frozen=True)
+class SpeakerVoiceMap:
+    voices: dict[str, VoicePrompt]
+    fallback: VoicePrompt | None = None
+
+
+@dataclass(frozen=True)
 class SamplingConfig:
     ode_method: str = "euler"
     num_steps: int = 10

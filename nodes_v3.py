@@ -23,11 +23,18 @@ if str(_NODE_ROOT) not in sys.path:
 from dots_tts_t8 import __version__
 from dots_tts_t8.environment import inspect_environment
 from dots_tts_t8.model_catalog import ModelCatalog
+from dots_tts_t8.production import build_production_plan
+from dots_tts_t8.pronunciation import (
+    apply_pronunciation,
+    parse_pronunciation_rules,
+)
 
 from .runtime.inference_adapter import (
     release_model,
+    run_batch_inference,
     run_inference,
     run_long_text_inference,
+    run_project_inference,
     runtime_info,
 )
 from .runtime.model_store import (
@@ -37,13 +44,14 @@ from .runtime.model_store import (
     resolve_model,
     validate_model,
 )
-from .runtime.types import ModelHandle, SamplingConfig, VoicePrompt
+from .runtime.types import ModelHandle, SamplingConfig, SpeakerVoiceMap, VoicePrompt
 
 LOGGER = logging.getLogger("comfyui-dots-tts-T8")
 CATEGORY = "T8star-Aix/Audio/dots.tts"
 ModelType = io.Custom("T8_DOTS_TTS_MODEL")
 VoiceType = io.Custom("T8_DOTS_TTS_VOICE")
 SamplingType = io.Custom("T8_DOTS_TTS_SAMPLING")
+SpeakerMapType = io.Custom("T8_DOTS_TTS_SPEAKER_MAP")
 LANGUAGES = [
     "inherit",
     "auto_detect",
@@ -73,6 +81,17 @@ LANGUAGES = [
     "FI",
     "HI",
 ]
+
+
+def _project_output_root(value: str) -> Path:
+    if value.strip():
+        return Path(value).expanduser().resolve()
+    try:
+        import folder_paths
+
+        return Path(folder_paths.get_output_directory()) / "dots_tts_t8_projects"
+    except (ImportError, AttributeError):
+        return Path.cwd() / "output" / "dots_tts_t8_projects"
 
 
 class T8DotsTTSModelLoader(io.ComfyNode):
@@ -310,6 +329,128 @@ class T8DotsTTSSampling(io.ComfyNode):
         )
 
 
+class T8DotsTTSSpeakerMap(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="T8_DotsTTS_SpeakerMap",
+            display_name="dots.tts 多角色音色映射 · T8star-Aix",
+            category=CATEGORY,
+            description=(
+                "把字幕中的角色名映射到 A-D 四个音色；未命中角色使用默认音色。"
+            ),
+            inputs=[
+                io.String.Input(
+                    "mapping_json",
+                    display_name="角色到槽位 JSON",
+                    multiline=True,
+                    default='{"旁白":"A","小明":"B"}',
+                ),
+                VoiceType.Input("voice_a", display_name="音色 A", optional=True),
+                VoiceType.Input("voice_b", display_name="音色 B", optional=True),
+                VoiceType.Input("voice_c", display_name="音色 C", optional=True),
+                VoiceType.Input("voice_d", display_name="音色 D", optional=True),
+                VoiceType.Input(
+                    "fallback_voice", display_name="默认音色", optional=True
+                ),
+            ],
+            outputs=[
+                SpeakerMapType.Output("speaker_map", display_name="多角色音色映射"),
+                io.String.Output("mapping_info", display_name="映射信息 JSON"),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(cls, mapping_json: str, **kwargs) -> bool | str:
+        try:
+            value = json.loads(mapping_json or "{}")
+            if not isinstance(value, dict):
+                return "角色到槽位 JSON 必须是对象。"
+            for speaker, slot in value.items():
+                selected = slot.get("slot") if isinstance(slot, dict) else slot
+                if str(selected).upper() not in {"A", "B", "C", "D"}:
+                    return f"角色 {speaker!r} 的槽位必须是 A/B/C/D。"
+            return True
+        except Exception as exc:
+            return f"角色映射 JSON 无效：{exc}"
+
+    @classmethod
+    def execute(
+        cls,
+        mapping_json: str,
+        voice_a: VoicePrompt | None = None,
+        voice_b: VoicePrompt | None = None,
+        voice_c: VoicePrompt | None = None,
+        voice_d: VoicePrompt | None = None,
+        fallback_voice: VoicePrompt | None = None,
+    ) -> io.NodeOutput:
+        value = json.loads(mapping_json or "{}")
+        slots = {"A": voice_a, "B": voice_b, "C": voice_c, "D": voice_d}
+        voices: dict[str, VoicePrompt] = {}
+        for raw_speaker, raw_slot in value.items():
+            speaker = str(raw_speaker).strip()
+            selected = raw_slot.get("slot") if isinstance(raw_slot, dict) else raw_slot
+            slot = str(selected).upper()
+            voice = slots.get(slot)
+            if not speaker:
+                raise ValueError("角色名不能为空。")
+            if voice is None:
+                raise ValueError(f"角色 {speaker!r} 使用的音色槽 {slot} 未连接。")
+            voices[speaker] = voice
+        speaker_map = SpeakerVoiceMap(voices=voices, fallback=fallback_voice)
+        info = {
+            "speakers": {
+                speaker: str(slot.get("slot") if isinstance(slot, dict) else slot).upper()
+                for speaker, slot in value.items()
+            },
+            "has_fallback": fallback_voice is not None,
+        }
+        return io.NodeOutput(speaker_map, json.dumps(info, ensure_ascii=False, indent=2))
+
+
+class T8DotsTTSPronunciation(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="T8_DotsTTS_Pronunciation",
+            display_name="dots.tts 发音词典 · T8star-Aix",
+            category=CATEGORY,
+            description="覆盖数字、人名和专有词读音；支持 JSON 或 `原文 => 读法`。",
+            inputs=[
+                io.String.Input(
+                    "text", display_name="原文本", multiline=True, default="2026 年，T8 发布。"
+                ),
+                io.String.Input(
+                    "dictionary",
+                    display_name="发音词典",
+                    multiline=True,
+                    default="2026 => 二零二六\nT8 => T 八",
+                ),
+            ],
+            outputs=[
+                io.String.Output("processed_text", display_name="替换后文本"),
+                io.String.Output("report", display_name="替换报告 JSON"),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(cls, text: str, dictionary: str, **kwargs) -> bool | str:
+        if not str(text).strip():
+            return "原文本不能为空。"
+        try:
+            parse_pronunciation_rules(dictionary)
+            return True
+        except Exception as exc:
+            return f"发音词典无效：{exc}"
+
+    @classmethod
+    def execute(cls, text: str, dictionary: str) -> io.NodeOutput:
+        report = apply_pronunciation(text, parse_pronunciation_rules(dictionary))
+        return io.NodeOutput(
+            report.text, json.dumps(report.as_dict(), ensure_ascii=False, indent=2)
+        )
+
+
 class T8DotsTTSGenerate(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -482,6 +623,298 @@ class T8DotsTTSLongText(io.ComfyNode):
         return io.NodeOutput(audio, json.dumps(info, ensure_ascii=False, indent=2))
 
 
+class T8DotsTTSProject(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="T8_DotsTTS_Project",
+            display_name="dots.tts 字幕与多角色工程 · T8star-Aix",
+            category=CATEGORY,
+            essentials_category="Audio",
+            search_aliases=["SRT", "subtitle", "多角色", "resume", "retry"],
+            description=(
+                "渲染 TXT/SRT/VTT 工程；逐段重试并持久化 checkpoint，"
+                "支持时间轴、多角色和发音词典。"
+            ),
+            inputs=[
+                ModelType.Input("model", display_name="dots.tts 模型"),
+                io.String.Input(
+                    "source_text",
+                    display_name="TXT / SRT / VTT 内容",
+                    multiline=True,
+                    default=(
+                        "1\n00:00:00,000 --> 00:00:02,000\n"
+                        "[旁白] 2026 年，T8 发布。"
+                    ),
+                    dynamic_prompts=True,
+                ),
+                io.String.Input(
+                    "project_name", display_name="工程名", default="subtitle.srt"
+                ),
+                io.Combo.Input(
+                    "project_kind",
+                    display_name="工程类型",
+                    options=["auto", "subtitle", "text"],
+                    default="auto",
+                ),
+                io.Combo.Input(
+                    "language",
+                    display_name="语言",
+                    options=LANGUAGES,
+                    default="inherit",
+                ),
+                io.Int.Input(
+                    "seed",
+                    display_name="起始 seed",
+                    default=42,
+                    min=0,
+                    max=0xFFFFFFFF,
+                    control_after_generate=True,
+                ),
+                io.String.Input(
+                    "pronunciation",
+                    display_name="发音词典",
+                    multiline=True,
+                    default="2026 => 二零二六\nT8 => T 八",
+                ),
+                io.Int.Input(
+                    "max_segment_tokens",
+                    display_name="每段最大 Tokens",
+                    default=120,
+                    min=16,
+                    max=512,
+                ),
+                io.Int.Input(
+                    "segment_gap_ms",
+                    display_name="文本段间停顿（毫秒）",
+                    default=200,
+                    min=0,
+                    max=10_000,
+                ),
+                io.Int.Input(
+                    "max_retries",
+                    display_name="单段重试次数",
+                    default=2,
+                    min=0,
+                    max=10,
+                ),
+                io.Boolean.Input(
+                    "resume", display_name="断点续做", default=True
+                ),
+                io.String.Input(
+                    "output_dir",
+                    display_name="工程输出目录（留空自动）",
+                    default="",
+                    advanced=True,
+                ),
+                SpeakerMapType.Input(
+                    "speaker_map", display_name="多角色音色映射", optional=True
+                ),
+                SamplingType.Input("sampling", display_name="采样配置", optional=True),
+            ],
+            outputs=[
+                io.Audio.Output("audio", display_name="工程音频"),
+                io.String.Output("project_info", display_name="时间轴与报告 JSON"),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(
+        cls,
+        source_text: str,
+        project_name: str,
+        project_kind: str,
+        pronunciation: str,
+        max_segment_tokens: int,
+        segment_gap_ms: int,
+        max_retries: int,
+        **kwargs,
+    ) -> bool | str:
+        if not str(source_text).strip():
+            return "工程内容不能为空。"
+        if int(max_segment_tokens) <= 0:
+            return "每段最大 Tokens 必须大于 0。"
+        if int(segment_gap_ms) < 0 or int(max_retries) < 0:
+            return "段间停顿和重试次数不能为负数。"
+        try:
+            build_production_plan(
+                project_name or "project.txt",
+                source_text,
+                kind=project_kind,
+                pronunciation=pronunciation,
+            )
+            return True
+        except Exception as exc:
+            return f"工程内容无效：{exc}"
+
+    @classmethod
+    def execute(
+        cls,
+        model: ModelHandle,
+        source_text: str,
+        project_name: str,
+        project_kind: str,
+        language: str,
+        seed: int,
+        pronunciation: str,
+        max_segment_tokens: int,
+        segment_gap_ms: int,
+        max_retries: int,
+        resume: bool,
+        output_dir: str,
+        speaker_map: SpeakerVoiceMap | None = None,
+        sampling: SamplingConfig | None = None,
+    ) -> io.NodeOutput:
+        audio, info = run_project_inference(
+            handle=model,
+            source_name=project_name.strip() or "project.txt",
+            source_text=source_text,
+            project_kind=project_kind,
+            language=language,
+            seed=int(seed),
+            speaker_map=speaker_map,
+            sampling=sampling,
+            pronunciation=pronunciation,
+            max_segment_tokens=int(max_segment_tokens),
+            segment_gap_ms=int(segment_gap_ms),
+            max_retries=int(max_retries),
+            resume=bool(resume),
+            output_root=_project_output_root(output_dir),
+        )
+        return io.NodeOutput(audio, json.dumps(info, ensure_ascii=False, indent=2))
+
+
+class T8DotsTTSBatchQueue(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="T8_DotsTTS_BatchQueue",
+            display_name="dots.tts 批量任务队列 · T8star-Aix",
+            category=CATEGORY,
+            essentials_category="Audio",
+            search_aliases=["batch", "folder", "批处理", "任务队列"],
+            description=(
+                "递归处理本地 TXT/SRT/VTT 文件或文件夹；输出首个工程预览、"
+                "批量 ZIP 和可恢复任务报告。"
+            ),
+            inputs=[
+                ModelType.Input("model", display_name="dots.tts 模型"),
+                io.String.Input(
+                    "input_paths",
+                    display_name="文件/文件夹路径（每行一个）",
+                    multiline=True,
+                    default="D:/dubbing-project/subtitles",
+                ),
+                io.Combo.Input(
+                    "language",
+                    display_name="语言",
+                    options=LANGUAGES,
+                    default="inherit",
+                ),
+                io.Int.Input(
+                    "seed", display_name="起始 seed", default=42, min=0, max=0xFFFFFFFF
+                ),
+                io.String.Input(
+                    "pronunciation",
+                    display_name="发音词典",
+                    multiline=True,
+                    default="",
+                ),
+                io.Int.Input(
+                    "max_segment_tokens",
+                    display_name="每段最大 Tokens",
+                    default=120,
+                    min=16,
+                    max=512,
+                ),
+                io.Int.Input(
+                    "segment_gap_ms",
+                    display_name="文本段间停顿（毫秒）",
+                    default=200,
+                    min=0,
+                    max=10_000,
+                ),
+                io.Int.Input(
+                    "max_retries",
+                    display_name="单段重试次数",
+                    default=2,
+                    min=0,
+                    max=10,
+                ),
+                io.Boolean.Input("resume", display_name="断点续做", default=True),
+                io.String.Input(
+                    "output_dir",
+                    display_name="工程输出目录（留空自动）",
+                    default="",
+                    advanced=True,
+                ),
+                SpeakerMapType.Input(
+                    "speaker_map", display_name="多角色音色映射", optional=True
+                ),
+                SamplingType.Input("sampling", display_name="采样配置", optional=True),
+            ],
+            outputs=[
+                io.Audio.Output("preview_audio", display_name="首个工程预览"),
+                io.String.Output("archive_path", display_name="批量 ZIP 路径"),
+                io.String.Output("batch_info", display_name="队列报告 JSON"),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(
+        cls,
+        input_paths: str,
+        max_segment_tokens: int,
+        segment_gap_ms: int,
+        max_retries: int,
+        **kwargs,
+    ) -> bool | str:
+        if not any(line.strip() for line in str(input_paths).splitlines()):
+            return "至少填写一个文件或文件夹路径。"
+        if int(max_segment_tokens) <= 0:
+            return "每段最大 Tokens 必须大于 0。"
+        if int(segment_gap_ms) < 0 or int(max_retries) < 0:
+            return "段间停顿和重试次数不能为负数。"
+        return True
+
+    @classmethod
+    def execute(
+        cls,
+        model: ModelHandle,
+        input_paths: str,
+        language: str,
+        seed: int,
+        pronunciation: str,
+        max_segment_tokens: int,
+        segment_gap_ms: int,
+        max_retries: int,
+        resume: bool,
+        output_dir: str,
+        speaker_map: SpeakerVoiceMap | None = None,
+        sampling: SamplingConfig | None = None,
+    ) -> io.NodeOutput:
+        paths = [line.strip() for line in input_paths.splitlines() if line.strip()]
+        audio, info = run_batch_inference(
+            handle=model,
+            input_paths=paths,
+            language=language,
+            seed=int(seed),
+            speaker_map=speaker_map,
+            sampling=sampling,
+            pronunciation=pronunciation,
+            max_segment_tokens=int(max_segment_tokens),
+            segment_gap_ms=int(segment_gap_ms),
+            max_retries=int(max_retries),
+            resume=bool(resume),
+            output_root=_project_output_root(output_dir),
+        )
+        return io.NodeOutput(
+            audio,
+            str(info["archive_path"]),
+            json.dumps(info, ensure_ascii=False, indent=2),
+        )
+
+
 class T8DotsTTSEnvironment(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -532,8 +965,12 @@ class T8DotsTTSExtension(ComfyExtension):
             T8DotsTTSModelLoader,
             T8DotsTTSVoicePrompt,
             T8DotsTTSSampling,
+            T8DotsTTSSpeakerMap,
+            T8DotsTTSPronunciation,
             T8DotsTTSGenerate,
             T8DotsTTSLongText,
+            T8DotsTTSProject,
+            T8DotsTTSBatchQueue,
             T8DotsTTSEnvironment,
             T8DotsTTSRelease,
         ]
@@ -547,8 +984,12 @@ __all__ = [
     "T8DotsTTSModelLoader",
     "T8DotsTTSVoicePrompt",
     "T8DotsTTSSampling",
+    "T8DotsTTSSpeakerMap",
+    "T8DotsTTSPronunciation",
     "T8DotsTTSGenerate",
     "T8DotsTTSLongText",
+    "T8DotsTTSProject",
+    "T8DotsTTSBatchQueue",
     "T8DotsTTSEnvironment",
     "T8DotsTTSRelease",
     "T8DotsTTSExtension",

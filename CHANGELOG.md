@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 - 2026-08-24
+
+- Added SRT/WebVTT timeline rendering and speaker annotations.
+- Added four-slot multi-speaker voice mapping with a fallback voice.
+- Added literal, word and regular-expression pronunciation overrides.
+- Added per-segment retries, atomic checkpoints and deterministic resume.
+- Added recursive TXT/SRT/VTT batch queues with isolated failures and ZIP export.
+- Added four ComfyUI V3 nodes and a desktop batch-production workbench.
+- Hardened checkpoint writes against short Windows antivirus/indexer file locks.
+
 ## 0.2.0 - 2026-08-23
 
 - Added a tokenizer-aware long-text V3 node with deterministic sentence splitting.

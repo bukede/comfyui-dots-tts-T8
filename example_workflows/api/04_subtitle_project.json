@@ -1,0 +1,48 @@
+{
+  "1": {
+    "class_type": "T8_DotsTTS_ModelLoader",
+    "inputs": {
+      "model_name": "dots.tts MF 2-Steps · Fast [mf-2steps]",
+      "precision": "bfloat16",
+      "optimize": false,
+      "release_after_run": false,
+      "verify_hashes": false,
+      "custom_model_path": ""
+    }
+  },
+  "2": {"class_type": "LoadAudio", "inputs": {"audio": "narrator_reference.wav"}},
+  "3": {
+    "class_type": "T8_DotsTTS_VoicePrompt",
+    "inputs": {"audio": ["2", 0], "transcript": "", "language": "ZH"}
+  },
+  "4": {
+    "class_type": "T8_DotsTTS_SpeakerMap",
+    "inputs": {
+      "mapping_json": "{\"旁白\":\"A\"}",
+      "voice_a": ["3", 0],
+      "fallback_voice": ["3", 0]
+    }
+  },
+  "5": {
+    "class_type": "T8_DotsTTS_Project",
+    "inputs": {
+      "model": ["1", 0],
+      "source_text": "1\n00:00:00,000 --> 00:00:02,500\n[旁白] 2026 年发布。\n\n2\n00:00:03,000 --> 00:00:05,500\n[旁白] 这是第二段。",
+      "project_name": "demo.srt",
+      "project_kind": "subtitle",
+      "language": "inherit",
+      "seed": 20260824,
+      "pronunciation": "2026 => 二零二六",
+      "max_segment_tokens": 120,
+      "segment_gap_ms": 200,
+      "max_retries": 2,
+      "resume": true,
+      "output_dir": "",
+      "speaker_map": ["4", 0]
+    }
+  },
+  "6": {
+    "class_type": "SaveAudio",
+    "inputs": {"audio": ["5", 0], "filename_prefix": "dots_tts_T8/subtitle_project"}
+  }
+}

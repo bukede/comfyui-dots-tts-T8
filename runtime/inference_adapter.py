@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import tempfile
 import threading
-from contextlib import nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from dots_tts_t8.long_text import (
@@ -10,11 +15,18 @@ from dots_tts_t8.long_text import (
     tokenizer_counter,
 )
 from dots_tts_t8.model_catalog import ModelCatalog
+from dots_tts_t8.production import (
+    GeneratedAudio,
+    ProductionRunner,
+    VoiceProfile,
+    build_production_plan,
+    run_batch_production,
+)
 from dots_tts_t8.runtime_manager import RuntimeManager, RuntimeSpec
 from dots_tts_t8.text_planner import plan_speech
 
 from .audio_adapter import normalize_output_audio, prompt_audio_file
-from .types import ModelHandle, SamplingConfig, VoicePrompt
+from .types import ModelHandle, SamplingConfig, SpeakerVoiceMap, VoicePrompt
 
 _MANAGER = RuntimeManager()
 _LOCK = threading.RLock()
@@ -246,6 +258,255 @@ def run_long_text_inference(
         finally:
             if handle.release_after_run:
                 _MANAGER.release()
+
+
+def _voice_fingerprint(voice: VoicePrompt | None) -> dict[str, Any] | None:
+    if voice is None:
+        return None
+    waveform = voice.audio.get("waveform")
+    sample_rate = int(voice.audio.get("sample_rate", 0))
+    if waveform is None or sample_rate <= 0:
+        raise ValueError("ComfyUI speaker audio is invalid.")
+    data = waveform.detach().float().cpu().contiguous().numpy()
+    return {
+        "sha256": hashlib.sha256(data.tobytes()).hexdigest(),
+        "shape": list(data.shape),
+        "sample_rate": sample_rate,
+        "transcript": voice.transcript,
+        "language": voice.language,
+    }
+
+
+def _project_audio(path: str | Path) -> dict:
+    import soundfile as sf
+    import torch
+
+    waveform, sample_rate = sf.read(path, dtype="float32", always_2d=True)
+    tensor = torch.from_numpy(waveform.T.copy())
+    return normalize_output_audio(tensor, int(sample_rate))
+
+
+def _resolve_segment_language(language: str, voice: VoicePrompt | None) -> str | None:
+    resolved: str | None = language
+    if resolved == "inherit" and voice is not None:
+        resolved = voice.language
+    if resolved == "none":
+        return None
+    return resolved
+
+
+@contextmanager
+def _production_generator(
+    *,
+    handle: ModelHandle,
+    language: str,
+    seed: int,
+    speaker_map: SpeakerVoiceMap | None,
+    sampling: SamplingConfig | None,
+    max_segment_tokens: int,
+    segment_gap_ms: int,
+):
+    voices = dict(speaker_map.voices) if speaker_map is not None else {}
+    fallback = speaker_map.fallback if speaker_map is not None else None
+    reference_voice = fallback or next(iter(voices.values()), None)
+    (
+        artifact,
+        selected,
+        spec,
+        _resolved_language,
+        ode_method,
+        num_steps,
+        guidance_scale,
+    ) = _resolve_inference(handle, language, reference_voice, sampling)
+
+    with _LOCK:
+        runtime = _MANAGER.load(spec)
+        with ExitStack() as stack, tempfile.TemporaryDirectory(
+            prefix="dots-tts-t8-project-"
+        ) as temporary:
+            prompt_paths: dict[int, str] = {}
+            for voice in [*voices.values(), fallback]:
+                if voice is not None and id(voice) not in prompt_paths:
+                    path = stack.enter_context(prompt_audio_file(voice.audio))
+                    prompt_paths[id(voice)] = str(path)
+            temporary_root = Path(temporary)
+
+            def generate(segment, _profile, segment_seed):
+                voice = voices.get(segment.speaker or "", fallback)
+                speech_plan = plan_speech(
+                    segment.text,
+                    max_tokens=int(max_segment_tokens),
+                    segment_gap_ms=int(segment_gap_ms),
+                    count_tokens=tokenizer_counter(runtime.model.tokenizer),
+                )
+                if not speech_plan.segments:
+                    raise ValueError("工程段落不包含可朗读内容。")
+                results = []
+                for subsegment in speech_plan.segments:
+                    results.append(
+                        _generate_once(
+                            spec=spec,
+                            text=subsegment.text,
+                            language=_resolve_segment_language(language, voice),
+                            seed=(int(segment_seed) + subsegment.index) & 0xFFFFFFFF,
+                            prompt_audio_path=(
+                                prompt_paths[id(voice)] if voice is not None else None
+                            ),
+                            prompt_text=(voice.transcript or None if voice else None),
+                            selected=selected,
+                            ode_method=ode_method,
+                            num_steps=num_steps,
+                            guidance_scale=guidance_scale,
+                        )
+                    )
+                sample_rates = {int(result["sample_rate"]) for result in results}
+                if len(sample_rates) != 1:
+                    raise ValueError(
+                        f"工程子段采样率不一致：{sorted(sample_rates)}"
+                    )
+                sample_rate = sample_rates.pop()
+                assembly = assemble_speech_audio(
+                    speech_plan,
+                    [result["audio"] for result in results],
+                    sample_rate=sample_rate,
+                )
+                import soundfile as sf
+
+                output = temporary_root / f"segment-{segment.index:06d}.wav"
+                sf.write(output, assembly.waveform.squeeze(0).numpy(), sample_rate)
+                return GeneratedAudio(
+                    str(output),
+                    {
+                        "model": artifact.repo_id,
+                        "mode": _mode(voice),
+                        "speaker": segment.speaker,
+                        "seed": int(segment_seed),
+                        "plan": speech_plan_dict(speech_plan),
+                        "assembly": assembly.as_dict(),
+                    },
+                )
+
+            context = {
+                "model": artifact.repo_id,
+                "model_key": artifact.key,
+                "sampling": {
+                    "ode_method": ode_method,
+                    "num_steps": num_steps,
+                    "guidance_scale": guidance_scale,
+                    "speaker_scale": selected.speaker_scale,
+                    "normalize_text": selected.normalize_text,
+                },
+                "language": language,
+                "base_seed": int(seed),
+                "voices": {
+                    name: _voice_fingerprint(voice) for name, voice in voices.items()
+                },
+                "fallback": _voice_fingerprint(fallback),
+            }
+            placeholder_profiles = {
+                name: VoiceProfile(speaker=name) for name in voices
+            }
+            fallback_profile = VoiceProfile("__fallback__") if fallback else None
+            try:
+                yield generate, context, placeholder_profiles, fallback_profile
+            finally:
+                if handle.release_after_run:
+                    _MANAGER.release()
+
+
+def run_project_inference(
+    *,
+    handle: ModelHandle,
+    source_name: str,
+    source_text: str,
+    project_kind: str,
+    language: str,
+    seed: int,
+    speaker_map: SpeakerVoiceMap | None,
+    sampling: SamplingConfig | None,
+    pronunciation: str,
+    max_segment_tokens: int,
+    segment_gap_ms: int,
+    max_retries: int,
+    resume: bool,
+    output_root: str | Path,
+) -> tuple[dict, dict]:
+    plan = build_production_plan(
+        source_name,
+        source_text,
+        kind=project_kind,  # type: ignore[arg-type]
+        pronunciation=pronunciation,
+    )
+    with _production_generator(
+        handle=handle,
+        language=language,
+        seed=seed,
+        speaker_map=speaker_map,
+        sampling=sampling,
+        max_segment_tokens=max_segment_tokens,
+        segment_gap_ms=segment_gap_ms,
+    ) as (generator, context, profiles, fallback_profile):
+        result = ProductionRunner(output_root).run(
+            plan,
+            generator,
+            voice_profiles=profiles,
+            fallback_voice=fallback_profile,
+            seed=seed,
+            max_retries=max_retries,
+            resume=resume,
+            segment_gap_ms=segment_gap_ms,
+            fingerprint_context=context,
+        )
+    timeline = json.loads(Path(result.timeline_path).read_text(encoding="utf-8"))
+    return _project_audio(result.audio_path), {
+        "project": result.as_dict(),
+        "timeline": timeline,
+    }
+
+
+def run_batch_inference(
+    *,
+    handle: ModelHandle,
+    input_paths: list[str],
+    language: str,
+    seed: int,
+    speaker_map: SpeakerVoiceMap | None,
+    sampling: SamplingConfig | None,
+    pronunciation: str,
+    max_segment_tokens: int,
+    segment_gap_ms: int,
+    max_retries: int,
+    resume: bool,
+    output_root: str | Path,
+) -> tuple[dict, dict]:
+    with _production_generator(
+        handle=replace(handle, release_after_run=False),
+        language=language,
+        seed=seed,
+        speaker_map=speaker_map,
+        sampling=sampling,
+        max_segment_tokens=max_segment_tokens,
+        segment_gap_ms=segment_gap_ms,
+    ) as (generator, context, profiles, fallback_profile):
+        try:
+            result = run_batch_production(
+                input_paths,
+                output_root,
+                generator,
+                pronunciation=pronunciation,
+                voice_profiles=profiles,
+                fallback_voice=fallback_profile,
+                seed=seed,
+                max_retries=max_retries,
+                resume=resume,
+                segment_gap_ms=segment_gap_ms,
+                fingerprint_context=context,
+            )
+        finally:
+            if handle.release_after_run:
+                _MANAGER.release()
+    preview = result.projects[0].audio_path
+    return _project_audio(preview), result.as_dict()
 
 
 def release_model() -> dict:

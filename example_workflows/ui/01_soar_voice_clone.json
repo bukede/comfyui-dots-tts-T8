@@ -22,7 +22,7 @@
         {"name": "model", "type": "T8_DOTS_TTS_MODEL", "links": [1]},
         {"name": "model_info", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_ModelLoader", "cnr_id": "dots-tts-t8", "ver": "0.2.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_ModelLoader", "cnr_id": "dots-tts-t8", "ver": "0.3.0"},
       "widgets_values": ["dots.tts SOAR · Quality [soar]", "bfloat16", false, false, false, ""]
     },
     {
@@ -60,7 +60,7 @@
         {"name": "voice", "type": "T8_DOTS_TTS_VOICE", "links": [3]},
         {"name": "voice_info", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_VoicePrompt", "cnr_id": "dots-tts-t8", "ver": "0.2.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_VoicePrompt", "cnr_id": "dots-tts-t8", "ver": "0.3.0"},
       "widgets_values": ["请把这里改成参考音频的逐字转写。", "ZH"]
     },
     {
@@ -83,7 +83,7 @@
         {"name": "audio", "type": "AUDIO", "links": [4]},
         {"name": "generation_info", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_Generate", "cnr_id": "dots-tts-t8", "ver": "0.2.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_Generate", "cnr_id": "dots-tts-t8", "ver": "0.3.0"},
       "widgets_values": ["欢迎使用 dots.tts，来自 T8star-Aix。", "inherit", 20260823, "fixed"]
     },
     {

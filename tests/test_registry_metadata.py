@@ -14,8 +14,12 @@ EXPECTED_NODE_IDS = {
     "T8_DotsTTS_ModelLoader",
     "T8_DotsTTS_VoicePrompt",
     "T8_DotsTTS_Sampling",
+    "T8_DotsTTS_SpeakerMap",
+    "T8_DotsTTS_Pronunciation",
     "T8_DotsTTS_Generate",
     "T8_DotsTTS_LongText",
+    "T8_DotsTTS_Project",
+    "T8_DotsTTS_BatchQueue",
     "T8_DotsTTS_Environment",
     "T8_DotsTTS_Release",
 }

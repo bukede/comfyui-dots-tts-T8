@@ -9,8 +9,12 @@ dots.tts 的 ComfyUI V3 原生节点，作者与发布者：T8star-Aix。
 - dots.tts 模型加载器
 - dots.tts 音色提示
 - dots.tts 采样配置
+- dots.tts 多角色音色映射（四个音色槽 + 默认回退）
+- dots.tts 发音词典（数字、人名与专有词覆盖）
 - dots.tts 语音生成
 - dots.tts 长文本生成（智能分段、音频拼接、显式停顿）
+- dots.tts 字幕与多角色工程（TXT/SRT/VTT、时间轴、重试、断点续做）
+- dots.tts 批量任务队列（文件/文件夹递归处理与 ZIP 导出）
 - dots.tts 环境诊断
 - dots.tts 释放模型
 
@@ -20,6 +24,29 @@ ComfyUI `AUDIO`，采样率为 48 kHz。
 长文本节点使用当前模型 tokenizer 按 token 数切分，支持中文/英文标点边界，
 并可使用 `<pause=800ms>` 或 `<pause=1.2s>` 插入最长 60 秒的显式停顿。各段使用
 从起始 seed 确定性派生的 seed，输出 JSON 会记录完整分段与拼接信息。
+
+## 字幕、多角色与批量工程
+
+字幕角色可写成 `[旁白] 文本`、`旁白：文本` 或 WebVTT `<v 旁白>文本`。
+“多角色音色映射”节点把角色映射到 A-D 音色槽；没有匹配的角色会使用默认音色。
+
+发音词典支持简洁行格式：
+
+```text
+2026 => 二零二六
+张三 => 章三
+T8 => T 八
+```
+
+也支持 JSON 对象或带 `mode`、`case_sensitive`、`priority` 的规则数组。工程节点把
+每个字幕条目或文本段独立保存到 `segments/`，每次尝试后原子更新
+`checkpoint.json`。开启“断点续做”后，已成功且音频仍有效的段不会再次推理。
+
+字幕工程按 SRT/VTT 起始时间混音，生成 `master.wav`、`timeline.json` 与标准化
+`timeline.srt`；超出字幕
+时长的语音不会被静默截断，报告会写入 `overflow_ms`。批量任务队列递归发现
+`.txt`、`.srt`、`.vtt`，逐工程隔离失败，并导出包含音频、时间轴和 checkpoint 的
+ZIP。
 
 ## 通过 ComfyUI Manager 安装（推荐）
 
@@ -104,6 +131,8 @@ Python 3.10-3.12 的 ComfyUI 环境。
 - SOAR 与 MF 2-Steps 权重均通过完整尺寸和 SHA-256 校验。
 - 输出为标准 ComfyUI `AUDIO`：`[batch, channel, samples]`，48 kHz，无 NaN/Inf。
 - 长文本节点会按模型 token 数切分、复用同一运行时，并精确保留显式停顿。
+- 字幕工程的角色映射、发音覆盖、时间轴混音、逐段重试和断点续做测试通过。
+- 批量任务队列可递归发现 TXT/SRT/VTT，隔离单工程失败并生成 ZIP。
 
 ## 许可证
 
