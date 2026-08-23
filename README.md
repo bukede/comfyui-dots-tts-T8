@@ -4,17 +4,22 @@ dots.tts 的 ComfyUI V3 原生节点，作者与发布者：T8star-Aix。
 
 节点菜单：`T8star-Aix / Audio / dots.tts`
 
-## 首版节点
+## 节点
 
 - dots.tts 模型加载器
 - dots.tts 音色提示
 - dots.tts 采样配置
 - dots.tts 语音生成
+- dots.tts 长文本生成（智能分段、音频拼接、显式停顿）
 - dots.tts 环境诊断
 - dots.tts 释放模型
 
 支持官方 SOAR（质量优先）和 MF-2steps（速度优先）模型。生成节点输出标准
 ComfyUI `AUDIO`，采样率为 48 kHz。
+
+长文本节点使用当前模型 tokenizer 按 token 数切分，支持中文/英文标点边界，
+并可使用 `<pause=800ms>` 或 `<pause=1.2s>` 插入最长 60 秒的显式停顿。各段使用
+从起始 seed 确定性派生的 seed，输出 JSON 会记录完整分段与拼接信息。
 
 ## 通过 ComfyUI Manager 安装（推荐）
 
@@ -98,6 +103,7 @@ Python 3.10-3.12 的 ComfyUI 环境。
 - SOAR 与 MF 2-Steps 的 text-only、continuation clone、x-vector clone 真实推理通过。
 - SOAR 与 MF 2-Steps 权重均通过完整尺寸和 SHA-256 校验。
 - 输出为标准 ComfyUI `AUDIO`：`[batch, channel, samples]`，48 kHz，无 NaN/Inf。
+- 长文本节点会按模型 token 数切分、复用同一运行时，并精确保留显式停顿。
 
 ## 许可证
 

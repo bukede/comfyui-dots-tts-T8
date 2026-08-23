@@ -8,7 +8,6 @@ import sys
 from dataclasses import asdict, dataclass
 from typing import Any
 
-
 RUNTIME_PACKAGES = (
     "torch",
     "torchaudio",
@@ -73,7 +72,9 @@ def inspect_environment(*, import_torch: bool = True) -> EnvironmentReport:
     warnings: list[str] = []
     missing = [name for name in REQUIRED_RUNTIME_PACKAGES if packages[name] is None]
     if missing:
-        warnings.append("Missing required runtime packages: " + ", ".join(missing) + ".")
+        warnings.append(
+            "Missing required runtime packages: " + ", ".join(missing) + "."
+        )
     if not supported_python:
         warnings.append(
             "dots.tts v0.3.1 officially supports Python 3.10-3.12; "

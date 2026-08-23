@@ -9,7 +9,6 @@ from typing import Callable
 
 from .model_catalog import ModelCatalog, ValidationReport
 
-
 ProgressCallback = Callable[[dict], None]
 
 

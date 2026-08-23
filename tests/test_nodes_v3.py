@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 NODE_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,6 +38,7 @@ def test_v3_extension_exposes_stable_node_ids() -> None:
         "T8_DotsTTS_VoicePrompt",
         "T8_DotsTTS_Sampling",
         "T8_DotsTTS_Generate",
+        "T8_DotsTTS_LongText",
         "T8_DotsTTS_Environment",
         "T8_DotsTTS_Release",
     ]
@@ -51,6 +51,17 @@ def test_generate_uses_standard_audio_output() -> None:
     assert schema.outputs[0].io_type == "AUDIO"
     assert module.T8DotsTTSGenerate.validate_inputs("hello") is True
     assert isinstance(module.T8DotsTTSGenerate.validate_inputs("   "), str)
+
+
+def test_long_text_uses_standard_audio_output_and_validates_controls() -> None:
+    module = _load_nodes_module()
+    schema = module.T8DotsTTSLongText.define_schema()
+
+    assert schema.outputs[0].io_type == "AUDIO"
+    assert module.T8DotsTTSLongText.validate_inputs("hello", 120, 200) is True
+    assert isinstance(module.T8DotsTTSLongText.validate_inputs("   ", 120, 200), str)
+    assert isinstance(module.T8DotsTTSLongText.validate_inputs("hello", 0, 200), str)
+    assert isinstance(module.T8DotsTTSLongText.validate_inputs("hello", 120, -1), str)
 
 
 def test_model_selector_keeps_both_types_without_local_weights() -> None:

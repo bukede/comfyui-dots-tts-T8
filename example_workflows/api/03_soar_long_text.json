@@ -1,0 +1,44 @@
+{
+  "1": {
+    "class_type": "T8_DotsTTS_ModelLoader",
+    "inputs": {
+      "model_name": "dots.tts SOAR · Quality [soar]",
+      "precision": "bfloat16",
+      "optimize": false,
+      "release_after_run": false,
+      "verify_hashes": false,
+      "custom_model_path": ""
+    }
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "inputs": {"audio": "voice_reference.wav"}
+  },
+  "3": {
+    "class_type": "T8_DotsTTS_VoicePrompt",
+    "inputs": {
+      "audio": ["2", 0],
+      "transcript": "请把这里改成参考音频的逐字转写。",
+      "language": "ZH"
+    }
+  },
+  "4": {
+    "class_type": "T8_DotsTTS_LongText",
+    "inputs": {
+      "model": ["1", 0],
+      "text": "这是长文本的第一段。<pause=800ms>这是第二段，系统会按照模型 token 数继续智能切分并拼接。",
+      "language": "inherit",
+      "seed": 20260823,
+      "max_segment_tokens": 120,
+      "segment_gap_ms": 200,
+      "voice": ["3", 0]
+    }
+  },
+  "5": {
+    "class_type": "SaveAudio",
+    "inputs": {
+      "audio": ["4", 0],
+      "filename_prefix": "dots_tts_T8/soar_long_text"
+    }
+  }
+}

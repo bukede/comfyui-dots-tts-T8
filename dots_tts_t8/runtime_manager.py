@@ -81,7 +81,9 @@ class RuntimeManager:
             self._spec = normalized
             return runtime
 
-    def generate(self, spec: RuntimeSpec, *, seed: int, **kwargs: Any) -> dict[str, Any]:
+    def generate(
+        self, spec: RuntimeSpec, *, seed: int, **kwargs: Any
+    ) -> dict[str, Any]:
         with self._lock:
             runtime = self.load(spec)
             from dots_tts.utils.util import seed_everything

@@ -8,8 +8,8 @@
 import sys
 from pathlib import Path
 
-
 _NODE_ROOT = Path(__file__).resolve().parent
+__version__ = "0.2.0"
 if str(_NODE_ROOT) not in sys.path:
     # The vendored upstream uses absolute ``dots_tts`` imports.
     sys.path.insert(0, str(_NODE_ROOT))
@@ -49,5 +49,4 @@ except ModuleNotFoundError as exc:
         ) from _COMFY_IMPORT_ERROR
 
 
-__version__ = "0.1.2"
 __all__ = ["comfy_entrypoint", "__version__"]

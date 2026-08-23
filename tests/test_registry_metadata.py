@@ -15,6 +15,7 @@ EXPECTED_NODE_IDS = {
     "T8_DotsTTS_VoicePrompt",
     "T8_DotsTTS_Sampling",
     "T8_DotsTTS_Generate",
+    "T8_DotsTTS_LongText",
     "T8_DotsTTS_Environment",
     "T8_DotsTTS_Release",
 }
@@ -29,7 +30,13 @@ PROTECTED_DEPENDENCIES = {
 
 
 def _dependency_name(requirement: str) -> str:
-    return requirement.split("[", 1)[0].split("<", 1)[0].split(">", 1)[0].split("=", 1)[0].lower()
+    return (
+        requirement.split("[", 1)[0]
+        .split("<", 1)[0]
+        .split(">", 1)[0]
+        .split("=", 1)[0]
+        .lower()
+    )
 
 
 def test_registry_metadata_is_publishable() -> None:
@@ -42,13 +49,37 @@ def test_registry_metadata_is_publishable() -> None:
         "https://github.com/T8mars/comfyui-dots-tts-T8"
     )
     assert comfy["PublisherId"] == "t8star"
-    assert not ({_dependency_name(item) for item in project["dependencies"]} & PROTECTED_DEPENDENCIES)
+    assert not (
+        {_dependency_name(item) for item in project["dependencies"]}
+        & PROTECTED_DEPENDENCIES
+    )
+
+
+def test_release_version_is_consistent_across_metadata_and_workflows() -> None:
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    version = metadata["project"]["version"]
+    assert f'__version__ = "{version}"' in (ROOT / "__init__.py").read_text(
+        encoding="utf-8"
+    )
+    assert f'__version__ = "{version}"' in (
+        ROOT / "dots_tts_t8" / "__init__.py"
+    ).read_text(encoding="utf-8")
+
+    for workflow_path in (ROOT / "example_workflows" / "ui").glob("*.json"):
+        workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
+        for node in workflow["nodes"]:
+            properties = node.get("properties", {})
+            if properties.get("cnr_id") == "dots-tts-t8":
+                assert properties.get("ver") == version, workflow_path.name
 
 
 def test_manager_node_list_covers_every_v3_node() -> None:
     node_list = json.loads((ROOT / "node_list.json").read_text(encoding="utf-8"))
     assert set(node_list) == EXPECTED_NODE_IDS
-    assert all(isinstance(description, str) and description for description in node_list.values())
+    assert all(
+        isinstance(description, str) and description
+        for description in node_list.values()
+    )
 
 
 def test_registry_package_has_no_installer_script() -> None:
@@ -57,7 +88,9 @@ def test_registry_package_has_no_installer_script() -> None:
 
 def test_registry_package_does_not_read_process_environment() -> None:
     production_files = (
-        path for path in ROOT.rglob("*.py") if "tests" not in path.relative_to(ROOT).parts
+        path
+        for path in ROOT.rglob("*.py")
+        if "tests" not in path.relative_to(ROOT).parts
     )
     findings: list[str] = []
     for path in production_files:

@@ -16,5 +16,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install "pytest>=8,<9"
-      - run: python -m pytest -q tests/test_registry_metadata.py
+      - run: python -m pytest -q tests
       - run: python -m compileall -q __init__.py nodes_v3.py runtime dots_tts dots_tts_t8 scripts

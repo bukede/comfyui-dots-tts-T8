@@ -6,7 +6,6 @@ from pathlib import Path
 
 from dots_tts_t8.model_catalog import ModelCatalog, ValidationReport
 
-
 MISSING_MODEL_OPTION = "未找到模型 · Run download_models.py"
 
 
@@ -74,8 +73,7 @@ def candidate_directories() -> dict[str, Path]:
 def model_options() -> list[str]:
     catalog = ModelCatalog.load()
     return [
-        f"{artifact.display_name} [{artifact.key}]"
-        for artifact in catalog.values()
+        f"{artifact.display_name} [{artifact.key}]" for artifact in catalog.values()
     ]
 
 

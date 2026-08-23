@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 - 2026-08-23
+
+- Added a tokenizer-aware long-text V3 node with deterministic sentence splitting.
+- Added `<pause=800ms>` / `<pause=1.2s>` explicit pauses, bounded to 60 seconds.
+- Added deterministic per-segment seeds, 48 kHz audio assembly and detailed plan JSON.
+- Reused one loaded runtime and one prepared voice prompt across all segments.
+- Added API/UI example workflows and real SOAR/MF 2-Steps CUDA smoke coverage.
+
 ## 0.1.2 - 2026-08-23
 
 - Replaced five optional environment-variable configuration reads with their existing

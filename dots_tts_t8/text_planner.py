@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Callable
-
 
 PAUSE_PATTERN = re.compile(
     r"<pause\s*=\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|s)?>",
@@ -30,18 +30,26 @@ class SpeechPlan:
     trailing_silence_ms: int
 
     @property
-    def total_explicit_silence_ms(self) -> int:
+    def total_silence_ms(self) -> int:
         return (
             self.leading_silence_ms
             + self.trailing_silence_ms
             + sum(segment.silence_before_ms for segment in self.segments)
         )
 
+    @property
+    def total_explicit_silence_ms(self) -> int:
+        """Backward-compatible alias retained for the v0.1 integration API."""
+
+        return self.total_silence_ms
+
 
 def _pause_ms(match: re.Match[str]) -> int:
     value = float(match.group("value"))
     unit = (match.group("unit") or "s").lower()
     millis = value if unit == "ms" else value * 1000.0
+    if not math.isfinite(millis) or millis >= 60_000:
+        return 60_000
     return max(0, min(int(round(millis)), 60_000))
 
 
@@ -143,7 +151,7 @@ def plan_speech(
         if before.strip():
             chunks.append((before, pending_silence_ms))
             pending_silence_ms = 0
-        pending_silence_ms += _pause_ms(match)
+        pending_silence_ms = min(60_000, pending_silence_ms + _pause_ms(match))
         cursor = match.end()
     tail = text[cursor:]
     if tail.strip():
