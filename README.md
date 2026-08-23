@@ -22,7 +22,7 @@ ComfyUI `AUDIO`，采样率为 48 kHz。
 重启 ComfyUI。节点由 Publisher ID `t8star` 通过官方 Comfy Registry 发布：
 
 - GitHub：<https://github.com/T8mars/comfyui-dots-tts-T8>
-- Registry：<https://registry.comfy.org/t8star/dots-tts-t8>
+- Registry：<https://registry.comfy.org/nodes/dots-tts-t8>
 
 Manager 会依据 `requirements.txt` 安装轻量依赖。遵循 ComfyUI Registry 安全规范，
 节点本身不会调用 pip，也不会在导入或推理时安装软件。
