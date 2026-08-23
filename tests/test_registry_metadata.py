@@ -55,6 +55,19 @@ def test_registry_package_has_no_installer_script() -> None:
     assert not (ROOT / "install.py").exists()
 
 
+def test_registry_package_does_not_read_process_environment() -> None:
+    production_files = (
+        path for path in ROOT.rglob("*.py") if "tests" not in path.relative_to(ROOT).parts
+    )
+    findings: list[str] = []
+    for path in production_files:
+        source = path.read_text(encoding="utf-8")
+        for forbidden in ("os.environ", "os.getenv"):
+            if forbidden in source:
+                findings.append(f"{path.relative_to(ROOT)}: {forbidden}")
+    assert findings == []
+
+
 def test_critical_vendored_inference_modules_are_present() -> None:
     critical = (
         "dots_tts/models/dots_tts/model.py",

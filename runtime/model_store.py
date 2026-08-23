@@ -11,9 +11,6 @@ MISSING_MODEL_OPTION = "未找到模型 · Run download_models.py"
 
 
 def _comfy_root() -> Path:
-    configured = os.environ.get("COMFYUI_ROOT")
-    if configured:
-        return Path(configured).expanduser().resolve()
     try:
         import folder_paths
 

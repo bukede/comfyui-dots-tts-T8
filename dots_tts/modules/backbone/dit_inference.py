@@ -25,7 +25,6 @@ Layering (top → bottom):
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
@@ -1242,22 +1241,18 @@ class EagerDiTRunner:
 def _resolve_kv_attention_backend(
     *, optimize: bool, on_cuda: bool, default_backend: str | None = None
 ) -> str:
-    """Pick the KV-cache attention backend (flex vs sdpa) from env / device."""
+    """Pick the KV-cache attention backend from explicit defaults and device."""
     if not optimize:
         return "sdpa"
-    env = os.environ.get("DOTS_TTS_DELAYED_DIT_BACKEND")
-    if env is None:
-        if default_backend is None:
-            return "flex" if on_cuda else "sdpa"
-        env = default_backend
-    env = env.lower()
-    if env not in {"sdpa", "flex"}:
+    backend = default_backend or ("flex" if on_cuda else "sdpa")
+    backend = backend.lower()
+    if backend not in {"sdpa", "flex"}:
         raise ValueError(
-            f"DOTS_TTS_DELAYED_DIT_BACKEND must be 'sdpa' or 'flex', got {env!r}."
+            f"Attention backend must be 'sdpa' or 'flex', got {backend!r}."
         )
-    if env == "flex" and not on_cuda:
+    if backend == "flex" and not on_cuda:
         raise ValueError("KV cache Flex attention backend requires CUDA.")
-    return env
+    return backend
 
 
 class DiTSolver:

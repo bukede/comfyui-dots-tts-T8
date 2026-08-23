@@ -23,7 +23,6 @@ INFERENCE_STAGE_NAMES = (
     "vocoder",
 )
 
-_TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 _INFERENCE_STAGE_NAME_MAP = {name.lower(): name for name in INFERENCE_STAGE_NAMES}
 _CURRENT_INFERENCE_PROFILER: ContextVar[InferenceProfiler | None] = ContextVar(
     "current_inference_profiler",
@@ -39,10 +38,6 @@ def normalize_inference_stage_name(name: str) -> str:
             f"Expected one of: {', '.join(INFERENCE_STAGE_NAMES)}."
         )
     return canonical
-
-
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in _TRUE_ENV_VALUES
 
 
 @dataclass(slots=True)
@@ -103,11 +98,7 @@ class InferenceProfiler:
         request_id: str | None = None,
     ):
         self._device = device
-        self._log_calls = (
-            _env_flag("DOTS_TTS_PROFILE_EACH_CALL")
-            if log_calls is None
-            else bool(log_calls)
-        )
+        self._log_calls = False if log_calls is None else bool(log_calls)
         self._request_id = request_id
         self._stats = {stage: InferenceStageStat() for stage in INFERENCE_STAGE_NAMES}
         self._call_index = 0

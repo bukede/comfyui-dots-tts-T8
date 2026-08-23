@@ -1,5 +1,3 @@
-import os
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,14 +6,12 @@ from torch.nn.attention.flex_attention import create_block_mask, flex_attention
 
 
 def _block_mask_flex_attention(q, k, v, block_mask):
-    backend = os.environ.get("DOTS_TTS_FLEX_ATTENTION_BACKEND")
-    kernel_options = None if not backend else {"BACKEND": backend.upper()}
     return flex_attention(
         q,
         k,
         v,
         block_mask=block_mask,
-        kernel_options=kernel_options,
+        kernel_options=None,
     )
 
 

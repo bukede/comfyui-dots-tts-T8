@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 - 2026-08-23
+
+- Replaced five optional environment-variable configuration reads with their existing
+  safe defaults so the Registry scanner no longer flags the package for environment
+  manipulation.
+- Preserved normal backend selection, logging, profiling and ComfyUI model discovery
+  behavior while keeping configuration explicit through function parameters.
+
 ## 0.1.1 - 2026-08-23
 
 - Anchored root model/output ignore rules so the vendored `dots_tts/models` Python
