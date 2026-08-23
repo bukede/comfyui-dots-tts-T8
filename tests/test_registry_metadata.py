@@ -53,3 +53,16 @@ def test_manager_node_list_covers_every_v3_node() -> None:
 
 def test_registry_package_has_no_installer_script() -> None:
     assert not (ROOT / "install.py").exists()
+
+
+def test_critical_vendored_inference_modules_are_present() -> None:
+    critical = (
+        "dots_tts/models/dots_tts/model.py",
+        "dots_tts/models/dots_tts/core.py",
+        "dots_tts/models/dots_tts/config.py",
+        "dots_tts/modules/vocoder/vocoder_inference.py",
+    )
+    assert all((ROOT / relative).is_file() for relative in critical)
+    ignore_lines = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "/models/" in ignore_lines
+    assert "models/" not in ignore_lines

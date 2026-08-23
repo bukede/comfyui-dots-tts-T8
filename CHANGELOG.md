@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 - 2026-08-23
+
+- Anchored root model/output ignore rules so the vendored `dots_tts/models` Python
+  package is included in GitHub and Registry archives.
+- Added a publish-time regression check for critical vendored inference modules.
+
 ## 0.1.0 - 2026-08-23
 
 - Initial ComfyUI V3 release with six stable T8 node IDs.
