@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 - 2026-08-24
+
+- Added pinned Qwen3-ASR transcription with Qwen ForcedAligner timestamps.
+- Added optional local CAM++ speaker diarization using a dots.tts speaker encoder.
+- Added executable ASR and subtitle-timeline V3 output nodes with text previews.
+- Added editable waveform timeline support to the bundled desktop Gradio studio.
+- Added resumable, hash-verified Windows desktop delta updates and rollback backups.
+- Added environment-driven Authenticode signing and release-signature verification.
+- Preserved the 11 existing node identifiers and added 2 new stable identifiers.
+
 ## 0.4.0 - 2026-08-24
 
 - Added pitch-preserving subtitle duration fitting with complete timeline metrics.

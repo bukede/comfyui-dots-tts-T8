@@ -5,10 +5,14 @@
 - `api/03_soar_long_text.json`：SOAR 长文本分段、显式停顿与音色克隆。
 - `api/04_subtitle_project.json`：SRT 时间轴、角色音色、发音词典与断点续做。
 - `api/05_batch_queue.json`：递归处理 TXT/SRT/VTT 文件与文件夹。
+- `api/06_asr_transcribe.json`：自动转写、时间戳与可选说话人分离。
+- `api/07_timeline_normalize.json`：SRT/WebVTT/JSON 时间轴标准化。
 - `voice_library.example.json`：六角色本地参考音频库；可继续增加角色。
 - `ui/01_soar_voice_clone.json`：可拖入 ComfyUI 画布的基础克隆流程。
 - `ui/02_soar_long_text.json`：可拖入画布的长文本音色克隆流程。
 - `ui/03_subtitle_project.json`：可拖入画布的字幕时间轴和角色音色流程。
+- `ui/04_asr_transcribe.json`：可拖入画布的自动字幕与说话人分离流程。
+- `ui/05_timeline_normalize.json`：可拖入画布的字幕格式标准化流程。
 
 模型加载器默认按固定清单从 `ComfyUI/models/TTS/dots.tts/` 查找模型。
 克隆示例使用 `voice_reference.wav`，请先把已获授权的参考录音放进 ComfyUI
@@ -26,3 +30,7 @@ v0.4 默认用 `shrink` 对超出字幕槽位的语音做保音高变速，并�
 标准化 LUFS 或回封视频。媒体导出需 FFmpeg；纯 WAV 不需要。批量示例把
 `retry_failed_only` 设为 `true` 后，只会重跑原 manifest 中失败的项目，并校验配置
 指纹。
+
+v0.5 的 ASR 示例需要手动安装 `qwen-asr==0.0.6` 与
+`transformers==4.57.6`。首次运行会下载约 3.7 GB 固定 revision 权重并校验大小与
+SHA-256；启用说话人分离时还需连接 dots.tts 模型加载器。

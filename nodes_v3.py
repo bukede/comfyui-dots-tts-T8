@@ -14,7 +14,7 @@ except ImportError:  # Python 3.10-3.11
         return method
 
 
-from comfy_api.v0_0_2 import ComfyExtension, io
+from comfy_api.v0_0_2 import ComfyExtension, io, ui
 
 _NODE_ROOT = Path(__file__).resolve().parent
 if str(_NODE_ROOT) not in sys.path:
@@ -29,7 +29,9 @@ from dots_tts_t8.pronunciation import (
     apply_pronunciation,
     parse_pronunciation_rules,
 )
+from dots_tts_t8.subtitles import parse_subtitles
 from dots_tts_t8.templates import parse_voice_library
+from dots_tts_t8.timeline import rows_to_cues, timeline_document
 
 from .runtime.inference_adapter import (
     release_model,
@@ -46,6 +48,7 @@ from .runtime.model_store import (
     resolve_model,
     validate_model,
 )
+from .runtime.transcription_adapter import run_transcription
 from .runtime.types import ModelHandle, SamplingConfig, SpeakerVoiceMap, VoicePrompt
 
 LOGGER = logging.getLogger("comfyui-dots-tts-T8")
@@ -1083,6 +1086,190 @@ class T8DotsTTSBatchQueue(io.ComfyNode):
         )
 
 
+class T8DotsTTSTranscribe(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="T8_DotsTTS_Transcribe",
+            display_name="dots.tts ASR 转写与说话人分离 · T8star-Aix",
+            category=CATEGORY,
+            essentials_category="Audio",
+            search_aliases=["ASR", "transcribe", "diarization", "自动字幕"],
+            description=(
+                "使用固定版本 Qwen3-ASR + ForcedAligner 生成时间戳；"
+                "可连接 dots.tts 模型，用 CAM++ 进行本地说话人分离。"
+            ),
+            inputs=[
+                io.Audio.Input("audio", display_name="待转写音频"),
+                io.Combo.Input(
+                    "language",
+                    display_name="识别语言",
+                    options=[
+                        "auto",
+                        "Chinese",
+                        "English",
+                        "Cantonese",
+                        "Japanese",
+                        "Korean",
+                    ],
+                    default="auto",
+                ),
+                io.Boolean.Input(
+                    "diarize", display_name="说话人分离", default=False
+                ),
+                io.Int.Input(
+                    "speaker_count",
+                    display_name="说话人数（0=自动）",
+                    default=0,
+                    min=0,
+                    max=32,
+                ),
+                io.Float.Input(
+                    "similarity_threshold",
+                    display_name="同一说话人相似度阈值",
+                    default=0.72,
+                    min=0.4,
+                    max=0.95,
+                    step=0.01,
+                ),
+                io.String.Input(
+                    "asr_model",
+                    display_name="ASR 模型或本地目录",
+                    default="Qwen/Qwen3-ASR-0.6B",
+                    advanced=True,
+                ),
+                io.String.Input(
+                    "aligner_model",
+                    display_name="ForcedAligner 模型或本地目录",
+                    default="Qwen/Qwen3-ForcedAligner-0.6B",
+                    advanced=True,
+                ),
+                io.Combo.Input(
+                    "device",
+                    display_name="ASR 设备",
+                    options=["cuda:0", "cpu"],
+                    default="cuda:0",
+                    advanced=True,
+                ),
+                ModelType.Input(
+                    "speaker_model",
+                    display_name="说话人编码模型",
+                    optional=True,
+                ),
+            ],
+            outputs=[
+                io.String.Output("srt", display_name="SRT 字幕"),
+                io.String.Output("timeline_json", display_name="时间轴 JSON"),
+                io.String.Output("asr_info", display_name="ASR 报告 JSON"),
+            ],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def validate_inputs(
+        cls,
+        speaker_count: int,
+        similarity_threshold: float,
+        diarize: bool,
+        speaker_model: ModelHandle | None = None,
+        **kwargs,
+    ) -> bool | str:
+        if not 0 <= int(speaker_count) <= 32:
+            return "说话人数必须为 0（自动）或 1–32。"
+        if not 0.4 <= float(similarity_threshold) <= 0.95:
+            return "说话人相似度阈值必须在 0.4–0.95。"
+        if diarize and speaker_model is None:
+            return "启用说话人分离时必须连接 dots.tts 模型。"
+        return True
+
+    @classmethod
+    def execute(
+        cls,
+        audio: dict,
+        language: str,
+        diarize: bool,
+        speaker_count: int,
+        similarity_threshold: float,
+        asr_model: str,
+        aligner_model: str,
+        device: str,
+        speaker_model: ModelHandle | None = None,
+    ) -> io.NodeOutput:
+        report = run_transcription(
+            audio,
+            asr_model=asr_model,
+            aligner_model=aligner_model,
+            language=None if language == "auto" else language,
+            diarize=bool(diarize),
+            speaker_count=int(speaker_count),
+            similarity_threshold=float(similarity_threshold),
+            device=device,
+            speaker_model=speaker_model,
+        )
+        timeline_json = json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "dots-tts-timeline",
+                "cues": report["segments"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        report_json = json.dumps(report, ensure_ascii=False, indent=2)
+        return io.NodeOutput(
+            report["srt"],
+            timeline_json,
+            report_json,
+            ui=ui.PreviewText(report["srt"]),
+        )
+
+
+class T8DotsTTSTimeline(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="T8_DotsTTS_Timeline",
+            display_name="dots.tts 字幕时间轴标准化 · T8star-Aix",
+            category=CATEGORY,
+            search_aliases=["subtitle", "timeline", "SRT", "VTT"],
+            description="校验并标准化 SRT、WebVTT 或 dots.tts 时间轴 JSON。",
+            inputs=[
+                io.String.Input(
+                    "timeline",
+                    display_name="字幕 / 时间轴",
+                    multiline=True,
+                    default="",
+                ),
+                io.Combo.Input(
+                    "input_format",
+                    display_name="输入格式",
+                    options=["srt", "vtt", "json"],
+                    default="srt",
+                ),
+            ],
+            outputs=[
+                io.String.Output("srt", display_name="标准 SRT"),
+                io.String.Output("timeline_json", display_name="标准时间轴 JSON"),
+            ],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, timeline: str, input_format: str) -> io.NodeOutput:
+        if input_format == "json":
+            value = json.loads(timeline)
+            raw_cues = value.get("cues", value) if isinstance(value, dict) else value
+            cues = rows_to_cues(raw_cues)
+        else:
+            cues = parse_subtitles(timeline)
+        srt = timeline_document(cues, "srt")
+        return io.NodeOutput(
+            srt,
+            timeline_document(cues, "json"),
+            ui=ui.PreviewText(srt),
+        )
+
+
 class T8DotsTTSEnvironment(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -1139,6 +1326,8 @@ class T8DotsTTSExtension(ComfyExtension):
             T8DotsTTSLongText,
             T8DotsTTSProject,
             T8DotsTTSBatchQueue,
+            T8DotsTTSTranscribe,
+            T8DotsTTSTimeline,
             T8DotsTTSEnvironment,
             T8DotsTTSRelease,
         ]
@@ -1158,6 +1347,8 @@ __all__ = [
     "T8DotsTTSLongText",
     "T8DotsTTSProject",
     "T8DotsTTSBatchQueue",
+    "T8DotsTTSTranscribe",
+    "T8DotsTTSTimeline",
     "T8DotsTTSEnvironment",
     "T8DotsTTSRelease",
     "T8DotsTTSExtension",

@@ -8,6 +8,8 @@
   "T8_DotsTTS_LongText": "按模型 token 数切分长文本，支持显式停顿并拼接标准 48 kHz AUDIO。",
   "T8_DotsTTS_Project": "渲染带字幕时长适配、媒体导出、重试和断点续做的 TXT/SRT/VTT 多角色工程。",
   "T8_DotsTTS_BatchQueue": "递归处理 TXT/SRT/VTT，支持失败项重跑并导出批量 ZIP。",
+  "T8_DotsTTS_Transcribe": "使用固定版本 Qwen3-ASR、ForcedAligner 和可选 CAM++ 说话人分离生成字幕。",
+  "T8_DotsTTS_Timeline": "校验并标准化 SRT、WebVTT 或 dots.tts 时间轴 JSON。",
   "T8_DotsTTS_Environment": "只读诊断 Python、依赖、CUDA 和模型缓存。",
-  "T8_DotsTTS_Release": "释放本节点持有的模型和 CUDA 缓存。"
+  "T8_DotsTTS_Release": "释放本节点持有的 TTS/ASR 模型和 CUDA 缓存。"
 }

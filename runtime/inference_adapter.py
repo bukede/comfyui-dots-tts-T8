@@ -529,9 +529,17 @@ def run_batch_inference(
 
 
 def release_model() -> dict:
+    from .transcription_adapter import release_transcription
+
     before = _MANAGER.info()
     _MANAGER.release()
-    return {"released": bool(before["loaded"]), "before": before}
+    asr_released = release_transcription()
+    return {
+        "released": bool(before["loaded"]) or asr_released,
+        "tts_released": bool(before["loaded"]),
+        "asr_released": asr_released,
+        "before": before,
+    }
 
 
 def runtime_info() -> dict:

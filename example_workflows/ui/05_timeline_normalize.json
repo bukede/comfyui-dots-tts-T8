@@ -1,0 +1,32 @@
+{
+  "last_node_id": 1,
+  "last_link_id": 0,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "T8_DotsTTS_Timeline",
+      "pos": [0, 0],
+      "size": [700, 500],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {"name": "timeline", "type": "STRING", "widget": {"name": "timeline"}, "link": null},
+        {"name": "input_format", "type": "COMBO", "widget": {"name": "input_format"}, "link": null}
+      ],
+      "outputs": [
+        {"name": "srt", "type": "STRING", "links": []},
+        {"name": "timeline_json", "type": "STRING", "links": []}
+      ],
+      "properties": {"Node name for S&R": "T8_DotsTTS_Timeline", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "widgets_values": ["1\n00:00:00,000 --> 00:00:02,500\n[旁白] 第一段。\n\n2\n00:00:03,000 --> 00:00:05,500\n[角色] 第二段。", "srt"]
+    }
+  ],
+  "links": [],
+  "groups": [
+    {"title": "dots.tts 字幕时间轴标准化 · T8star-Aix", "bounding": [-40, -60, 790, 620], "color": "#8b5cf6", "font_size": 24, "flags": {}}
+  ],
+  "config": {},
+  "extra": {"ds": {"scale": 1.0, "offset": [80, 70]}},
+  "version": 0.4
+}

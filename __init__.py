@@ -2,14 +2,14 @@
 @author: T8star-Aix
 @title: comfyui-dots-tts-T8
 @nickname: dots.tts · T8star-Aix
-@description: Native ComfyUI V3 nodes for dots.tts synthesis and voice cloning.
+@description: Native ComfyUI V3 nodes for dots.tts synthesis, ASR, diarization, and subtitles.
 """
 
 import sys
 from pathlib import Path
 
 _NODE_ROOT = Path(__file__).resolve().parent
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 if str(_NODE_ROOT) not in sys.path:
     # The vendored upstream uses absolute ``dots_tts`` imports.
     sys.path.insert(0, str(_NODE_ROOT))

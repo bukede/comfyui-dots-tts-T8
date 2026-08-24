@@ -20,6 +20,8 @@ EXPECTED_NODE_IDS = {
     "T8_DotsTTS_LongText",
     "T8_DotsTTS_Project",
     "T8_DotsTTS_BatchQueue",
+    "T8_DotsTTS_Transcribe",
+    "T8_DotsTTS_Timeline",
     "T8_DotsTTS_Environment",
     "T8_DotsTTS_Release",
 }

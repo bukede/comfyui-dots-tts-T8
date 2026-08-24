@@ -1,0 +1,83 @@
+{
+  "last_node_id": 3,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadAudio",
+      "pos": [0, 330],
+      "size": [340, 130],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {"name": "audio", "type": "COMBO", "widget": {"name": "audio"}, "link": null}
+      ],
+      "outputs": [
+        {"name": "AUDIO", "type": "AUDIO", "links": [1]}
+      ],
+      "properties": {"Node name for S&R": "LoadAudio", "cnr_id": "comfy-core", "ver": "0.6.0"},
+      "widgets_values": ["dialog.wav"]
+    },
+    {
+      "id": 2,
+      "type": "T8_DotsTTS_ModelLoader",
+      "pos": [0, 0],
+      "size": [430, 300],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {"name": "model_name", "type": "COMBO", "widget": {"name": "model_name"}, "link": null},
+        {"name": "precision", "type": "COMBO", "widget": {"name": "precision"}, "link": null},
+        {"name": "optimize", "type": "BOOLEAN", "widget": {"name": "optimize"}, "link": null},
+        {"name": "release_after_run", "type": "BOOLEAN", "widget": {"name": "release_after_run"}, "link": null},
+        {"name": "verify_hashes", "type": "BOOLEAN", "widget": {"name": "verify_hashes"}, "link": null},
+        {"name": "custom_model_path", "type": "STRING", "widget": {"name": "custom_model_path"}, "link": null, "shape": 7}
+      ],
+      "outputs": [
+        {"name": "model", "type": "T8_DOTS_TTS_MODEL", "links": [2]},
+        {"name": "model_info", "type": "STRING", "links": []}
+      ],
+      "properties": {"Node name for S&R": "T8_DotsTTS_ModelLoader", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "widgets_values": ["dots.tts MF 2-Steps · Fast [mf-2steps]", "bfloat16", false, false, false, ""]
+    },
+    {
+      "id": 3,
+      "type": "T8_DotsTTS_Transcribe",
+      "pos": [520, 70],
+      "size": [620, 520],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {"name": "audio", "type": "AUDIO", "link": 1},
+        {"name": "language", "type": "COMBO", "widget": {"name": "language"}, "link": null},
+        {"name": "diarize", "type": "BOOLEAN", "widget": {"name": "diarize"}, "link": null},
+        {"name": "speaker_count", "type": "INT", "widget": {"name": "speaker_count"}, "link": null},
+        {"name": "similarity_threshold", "type": "FLOAT", "widget": {"name": "similarity_threshold"}, "link": null},
+        {"name": "asr_model", "type": "STRING", "widget": {"name": "asr_model"}, "link": null},
+        {"name": "aligner_model", "type": "STRING", "widget": {"name": "aligner_model"}, "link": null},
+        {"name": "device", "type": "COMBO", "widget": {"name": "device"}, "link": null},
+        {"name": "speaker_model", "type": "T8_DOTS_TTS_MODEL", "link": 2, "shape": 7}
+      ],
+      "outputs": [
+        {"name": "srt", "type": "STRING", "links": []},
+        {"name": "timeline_json", "type": "STRING", "links": []},
+        {"name": "asr_info", "type": "STRING", "links": []}
+      ],
+      "properties": {"Node name for S&R": "T8_DotsTTS_Transcribe", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "widgets_values": ["auto", true, 0, 0.72, "Qwen/Qwen3-ASR-0.6B", "Qwen/Qwen3-ForcedAligner-0.6B", "cuda:0"]
+    }
+  ],
+  "links": [
+    [1, 1, 0, 3, 0, "AUDIO"],
+    [2, 2, 0, 3, 8, "T8_DOTS_TTS_MODEL"]
+  ],
+  "groups": [
+    {"title": "dots.tts 自动字幕与说话人分离 · T8star-Aix", "bounding": [-40, -60, 1230, 700], "color": "#14b8a6", "font_size": 24, "flags": {}}
+  ],
+  "config": {},
+  "extra": {"ds": {"scale": 0.9, "offset": [60, 50]}},
+  "version": 0.4
+}

@@ -44,6 +44,8 @@ def test_v3_extension_exposes_stable_node_ids() -> None:
         "T8_DotsTTS_LongText",
         "T8_DotsTTS_Project",
         "T8_DotsTTS_BatchQueue",
+        "T8_DotsTTS_Transcribe",
+        "T8_DotsTTS_Timeline",
         "T8_DotsTTS_Environment",
         "T8_DotsTTS_Release",
     ]
@@ -56,6 +58,24 @@ def test_generate_uses_standard_audio_output() -> None:
     assert schema.outputs[0].io_type == "AUDIO"
     assert module.T8DotsTTSGenerate.validate_inputs("hello") is True
     assert isinstance(module.T8DotsTTSGenerate.validate_inputs("   "), str)
+
+
+def test_asr_and_timeline_are_executable_text_output_nodes() -> None:
+    module = _load_nodes_module()
+    asr_schema = module.T8DotsTTSTranscribe.define_schema()
+    timeline_schema = module.T8DotsTTSTimeline.define_schema()
+
+    assert asr_schema.is_output_node is True
+    assert timeline_schema.is_output_node is True
+    assert [output.io_type for output in asr_schema.outputs] == [
+        "STRING",
+        "STRING",
+        "STRING",
+    ]
+    assert module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, False) is True
+    assert isinstance(
+        module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, True), str
+    )
 
 
 def test_long_text_uses_standard_audio_output_and_validates_controls() -> None:
@@ -99,6 +119,28 @@ def test_project_nodes_expose_audio_outputs_and_validate_inputs() -> None:
         str,
     )
     assert module.T8DotsTTSBatchQueue.validate_inputs("D:/work", 120, 200, 2) is True
+
+
+def test_asr_and_timeline_nodes_expose_v3_contracts() -> None:
+    module = _load_nodes_module()
+    asr_schema = module.T8DotsTTSTranscribe.define_schema()
+    timeline_schema = module.T8DotsTTSTimeline.define_schema()
+    assert asr_schema.inputs[0].io_type == "AUDIO"
+    assert [item.id for item in asr_schema.outputs] == [
+        "srt",
+        "timeline_json",
+        "asr_info",
+    ]
+    assert module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, False) is True
+    assert isinstance(
+        module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, True), str
+    )
+    normalized = module.T8DotsTTSTimeline.execute(
+        "1\n00:00:00,000 --> 00:00:01,000\n[旁白] 你好。\n",
+        "srt",
+    )
+    assert "[旁白] 你好。" in normalized[0]
+    assert timeline_schema.outputs[0].id == "srt"
 
 
 def test_speaker_map_and_pronunciation_helpers() -> None:

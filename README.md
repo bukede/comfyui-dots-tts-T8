@@ -15,6 +15,8 @@ dots.tts 的 ComfyUI V3 原生节点，作者与发布者：T8star-Aix。
 - dots.tts 长文本生成（智能分段、音频拼接、显式停顿）
 - dots.tts 字幕与多角色工程（时间轴适配、媒体导出、重试、断点续做）
 - dots.tts 批量任务队列（递归处理、失败项重跑与 ZIP 导出）
+- dots.tts ASR 转写与说话人分离（Qwen3-ASR + ForcedAligner + 可选 CAM++）
+- dots.tts 字幕时间轴标准化（SRT / WebVTT / JSON）
 - dots.tts 环境诊断
 - dots.tts 释放模型
 
@@ -54,6 +56,26 @@ ZIP。“只重跑失败项”会读取原 manifest，并要求配置指纹完�
 媒体导出支持 WAV、MP3、FLAC、两遍 EBU R128 LUFS 标准化和视频音轨回封。纯 WAV
 不需要 FFmpeg；其他功能要求系统 `PATH` 中存在 FFmpeg，或在工程/批量节点填写
 `ffmpeg_path`。节点不会下载或安装 FFmpeg。
+
+## ASR 与字幕时间轴
+
+“ASR 转写与说话人分离”节点把 ComfyUI `AUDIO` 转为带时间戳的 SRT、标准时间轴
+JSON 和完整识别报告。默认使用固定 revision 的 `Qwen/Qwen3-ASR-0.6B` 与
+`Qwen/Qwen3-ForcedAligner-0.6B`，首次使用会下载约 3.7 GB 权重并逐文件校验尺寸和
+SHA-256。启用说话人分离时，需要连接任意已发现的 dots.tts 模型；节点只读取其中的
+CAM++ `speaker_encoder.safetensors`，不会为分离加载完整 TTS 推理模型。
+
+ASR 是可选能力。为避免 ComfyUI Manager 自动升级核心 `transformers`，它不在
+`requirements.txt` 中。请先备份 ComfyUI 环境，再使用启动 ComfyUI 的同一个 Python
+手动安装与本节点验证版本一致的组件：
+
+```powershell
+python -m pip install "qwen-asr==0.0.6" "transformers==4.57.6"
+```
+
+若其他节点不兼容该 Transformers 版本，可保留桌面整合包中的 ASR，ComfyUI 侧只用
+TTS 节点。“字幕时间轴标准化”节点可校验 SRT、WebVTT 或本项目 JSON，重新输出统一
+SRT/JSON；两个节点都可作为队列终点并直接预览字幕文本。
 
 ## 通过 ComfyUI Manager 安装（推荐）
 
@@ -142,6 +164,8 @@ Python 3.10-3.12 的 ComfyUI 环境。
 - 批量任务队列可递归发现 TXT/SRT/VTT，隔离单工程失败并生成 ZIP。
 - 六角色文件音色库、字幕保音高时长适配、失败项确定性重跑通过。
 - 真实 FFmpeg 两遍 LUFS、MP3/FLAC 与 MP4 音轨回封通过。
+- Qwen3-ASR + ForcedAligner 真实 CUDA 转写、时间戳和 CAM++ 说话人分离通过。
+- ASR/时间轴节点可作为 V3 输出节点执行并返回标准 SRT/JSON。
 
 ## 许可证
 

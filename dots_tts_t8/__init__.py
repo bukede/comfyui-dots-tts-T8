@@ -46,6 +46,26 @@ from .templates import (
     save_voice_library,
 )
 from .text_planner import SpeechPlan, SpeechSegment, plan_speech
+from .timeline import (
+    TIMELINE_HEADERS,
+    cues_to_rows,
+    load_timeline,
+    render_timeline_html,
+    rows_to_cues,
+    save_timeline,
+    timeline_document,
+)
+from .transcription import (
+    QwenAsrEngine,
+    TimedToken,
+    TranscriptionResult,
+    TranscriptionSegment,
+    cluster_speakers,
+    diarize_segments,
+    group_timed_tokens,
+    transcription_cues,
+    transcription_srt,
+)
 
 __all__ = [
     "AudioAssembly",
@@ -67,16 +87,25 @@ __all__ = [
     "SpeechPlan",
     "SpeechSegment",
     "SubtitleCue",
+    "TIMELINE_HEADERS",
+    "TimedToken",
+    "TranscriptionResult",
+    "TranscriptionSegment",
     "ValidationReport",
     "VoiceProfile",
     "VoiceLibrary",
     "apply_pronunciation",
     "assemble_speech_audio",
     "build_production_plan",
+    "cluster_speakers",
+    "cues_to_rows",
+    "diarize_segments",
     "discover_project_files",
     "export_project_media",
     "find_ffmpeg",
     "fit_audio_to_duration",
+    "group_timed_tokens",
+    "load_timeline",
     "parse_plain_text",
     "parse_audio_formats",
     "parse_project_template",
@@ -85,11 +114,18 @@ __all__ = [
     "parse_voice_profiles",
     "parse_voice_library",
     "plan_speech",
+    "QwenAsrEngine",
+    "render_timeline_html",
+    "rows_to_cues",
     "run_batch_production",
     "speech_plan_dict",
     "save_project_template",
+    "save_timeline",
     "save_voice_library",
     "tokenizer_counter",
+    "timeline_document",
+    "transcription_cues",
+    "transcription_srt",
 ]
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
