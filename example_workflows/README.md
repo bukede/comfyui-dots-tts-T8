@@ -5,6 +5,7 @@
 - `api/03_soar_long_text.json`：SOAR 长文本分段、显式停顿与音色克隆。
 - `api/04_subtitle_project.json`：SRT 时间轴、角色音色、发音词典与断点续做。
 - `api/05_batch_queue.json`：递归处理 TXT/SRT/VTT 文件与文件夹。
+- `voice_library.example.json`：六角色本地参考音频库；可继续增加角色。
 - `ui/01_soar_voice_clone.json`：可拖入 ComfyUI 画布的基础克隆流程。
 - `ui/02_soar_long_text.json`：可拖入画布的长文本音色克隆流程。
 - `ui/03_subtitle_project.json`：可拖入画布的字幕时间轴和角色音色流程。
@@ -20,3 +21,8 @@
 工程节点每成功一段就更新 `checkpoint.json`，再次执行且“断点续做”开启时只处理
 失败或未完成段。批量节点还会导出包含 master WAV、分段 WAV、时间轴和 checkpoint
 的 ZIP。
+
+v0.4 默认用 `shrink` 对超出字幕槽位的语音做保音高变速，并可导出 MP3/FLAC、
+标准化 LUFS 或回封视频。媒体导出需 FFmpeg；纯 WAV 不需要。批量示例把
+`retry_failed_only` 设为 `true` 后，只会重跑原 manifest 中失败的项目，并校验配置
+指纹。

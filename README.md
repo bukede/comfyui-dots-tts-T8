@@ -9,12 +9,12 @@ dots.tts 的 ComfyUI V3 原生节点，作者与发布者：T8star-Aix。
 - dots.tts 模型加载器
 - dots.tts 音色提示
 - dots.tts 采样配置
-- dots.tts 多角色音色映射（四个音色槽 + 默认回退）
+- dots.tts 多角色音色映射（A-D 音色槽 + 无限角色 JSON 音色库 + 默认回退）
 - dots.tts 发音词典（数字、人名与专有词覆盖）
 - dots.tts 语音生成
 - dots.tts 长文本生成（智能分段、音频拼接、显式停顿）
-- dots.tts 字幕与多角色工程（TXT/SRT/VTT、时间轴、重试、断点续做）
-- dots.tts 批量任务队列（文件/文件夹递归处理与 ZIP 导出）
+- dots.tts 字幕与多角色工程（时间轴适配、媒体导出、重试、断点续做）
+- dots.tts 批量任务队列（递归处理、失败项重跑与 ZIP 导出）
 - dots.tts 环境诊断
 - dots.tts 释放模型
 
@@ -29,6 +29,9 @@ ComfyUI `AUDIO`，采样率为 48 kHz。
 
 字幕角色可写成 `[旁白] 文本`、`旁白：文本` 或 WebVTT `<v 旁白>文本`。
 “多角色音色映射”节点把角色映射到 A-D 音色槽；没有匹配的角色会使用默认音色。
+`voice_library` 还可填写音色库 JSON 或 JSON 文件路径，每个角色使用
+`audio`、`transcript`、`language` 描述，因此角色数量不再受四个连接槽限制。示例见
+`example_workflows/voice_library.example.json`。相对音频路径以音色库文件目录为准。
 
 发音词典支持简洁行格式：
 
@@ -42,11 +45,15 @@ T8 => T 八
 每个字幕条目或文本段独立保存到 `segments/`，每次尝试后原子更新
 `checkpoint.json`。开启“断点续做”后，已成功且音频仍有效的段不会再次推理。
 
-字幕工程按 SRT/VTT 起始时间混音，生成 `master.wav`、`timeline.json` 与标准化
-`timeline.srt`；超出字幕
-时长的语音不会被静默截断，报告会写入 `overflow_ms`。批量任务队列递归发现
+字幕工程按 SRT/VTT 起始时间混音。默认 `shrink` 会对超出槽位的语音做保音高变速；
+也可选择全部对齐、保持原时长或明确裁剪。`timeline.json` 会记录原时长、输出时长、
+变速率和 `overflow_ms`。工程生成 `master.wav` 与标准化 `timeline.srt`。批量任务队列递归发现
 `.txt`、`.srt`、`.vtt`，逐工程隔离失败，并导出包含音频、时间轴和 checkpoint 的
-ZIP。
+ZIP。“只重跑失败项”会读取原 manifest，并要求配置指纹完全一致。
+
+媒体导出支持 WAV、MP3、FLAC、两遍 EBU R128 LUFS 标准化和视频音轨回封。纯 WAV
+不需要 FFmpeg；其他功能要求系统 `PATH` 中存在 FFmpeg，或在工程/批量节点填写
+`ffmpeg_path`。节点不会下载或安装 FFmpeg。
 
 ## 通过 ComfyUI Manager 安装（推荐）
 
@@ -133,6 +140,8 @@ Python 3.10-3.12 的 ComfyUI 环境。
 - 长文本节点会按模型 token 数切分、复用同一运行时，并精确保留显式停顿。
 - 字幕工程的角色映射、发音覆盖、时间轴混音、逐段重试和断点续做测试通过。
 - 批量任务队列可递归发现 TXT/SRT/VTT，隔离单工程失败并生成 ZIP。
+- 六角色文件音色库、字幕保音高时长适配、失败项确定性重跑通过。
+- 真实 FFmpeg 两遍 LUFS、MP3/FLAC 与 MP4 音轨回封通过。
 
 ## 许可证
 

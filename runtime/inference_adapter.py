@@ -321,9 +321,10 @@ def _production_generator(
 
     with _LOCK:
         runtime = _MANAGER.load(spec)
-        with ExitStack() as stack, tempfile.TemporaryDirectory(
-            prefix="dots-tts-t8-project-"
-        ) as temporary:
+        with (
+            ExitStack() as stack,
+            tempfile.TemporaryDirectory(prefix="dots-tts-t8-project-") as temporary,
+        ):
             prompt_paths: dict[int, str] = {}
             for voice in [*voices.values(), fallback]:
                 if voice is not None and id(voice) not in prompt_paths:
@@ -361,9 +362,7 @@ def _production_generator(
                     )
                 sample_rates = {int(result["sample_rate"]) for result in results}
                 if len(sample_rates) != 1:
-                    raise ValueError(
-                        f"工程子段采样率不一致：{sorted(sample_rates)}"
-                    )
+                    raise ValueError(f"工程子段采样率不一致：{sorted(sample_rates)}")
                 sample_rate = sample_rates.pop()
                 assembly = assemble_speech_audio(
                     speech_plan,
@@ -403,9 +402,7 @@ def _production_generator(
                 },
                 "fallback": _voice_fingerprint(fallback),
             }
-            placeholder_profiles = {
-                name: VoiceProfile(speaker=name) for name in voices
-            }
+            placeholder_profiles = {name: VoiceProfile(speaker=name) for name in voices}
             fallback_profile = VoiceProfile("__fallback__") if fallback else None
             try:
                 yield generate, context, placeholder_profiles, fallback_profile
@@ -430,6 +427,11 @@ def run_project_inference(
     max_retries: int,
     resume: bool,
     output_root: str | Path,
+    subtitle_fit_mode: str = "shrink",
+    audio_formats: str = "wav",
+    target_lufs: float | None = None,
+    video_path: str | Path | None = None,
+    ffmpeg_path: str | Path | None = None,
 ) -> tuple[dict, dict]:
     plan = build_production_plan(
         source_name,
@@ -456,6 +458,11 @@ def run_project_inference(
             resume=resume,
             segment_gap_ms=segment_gap_ms,
             fingerprint_context=context,
+            subtitle_fit_mode=subtitle_fit_mode,  # type: ignore[arg-type]
+            audio_formats=audio_formats,
+            target_lufs=target_lufs,
+            video_path=video_path,
+            ffmpeg_path=ffmpeg_path,
         )
     timeline = json.loads(Path(result.timeline_path).read_text(encoding="utf-8"))
     return _project_audio(result.audio_path), {
@@ -478,6 +485,12 @@ def run_batch_inference(
     max_retries: int,
     resume: bool,
     output_root: str | Path,
+    retry_failed_only: bool = False,
+    subtitle_fit_mode: str = "shrink",
+    audio_formats: str = "wav",
+    target_lufs: float | None = None,
+    video_path: str | Path | None = None,
+    ffmpeg_path: str | Path | None = None,
 ) -> tuple[dict, dict]:
     with _production_generator(
         handle=replace(handle, release_after_run=False),
@@ -501,6 +514,12 @@ def run_batch_inference(
                 resume=resume,
                 segment_gap_ms=segment_gap_ms,
                 fingerprint_context=context,
+                retry_failed_only=retry_failed_only,
+                subtitle_fit_mode=subtitle_fit_mode,  # type: ignore[arg-type]
+                audio_formats=audio_formats,
+                target_lufs=target_lufs,
+                video_path=video_path,
+                ffmpeg_path=ffmpeg_path,
             )
         finally:
             if handle.release_after_run:

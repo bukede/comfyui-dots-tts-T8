@@ -19,6 +19,7 @@
     "class_type": "T8_DotsTTS_SpeakerMap",
     "inputs": {
       "mapping_json": "{\"旁白\":\"A\"}",
+      "voice_library": "",
       "voice_a": ["3", 0],
       "fallback_voice": ["3", 0]
     }
@@ -37,6 +38,11 @@
       "segment_gap_ms": 200,
       "max_retries": 2,
       "resume": true,
+      "subtitle_fit_mode": "shrink",
+      "audio_formats": "wav,mp3,flac",
+      "target_lufs": -16.0,
+      "video_path": "",
+      "ffmpeg_path": "",
       "output_dir": "",
       "speaker_map": ["4", 0]
     }

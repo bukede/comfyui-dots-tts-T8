@@ -2,12 +2,12 @@
   "T8_DotsTTS_ModelLoader": "发现并校验 dots.tts SOAR / MF 2-Steps 模型。",
   "T8_DotsTTS_VoicePrompt": "封装参考音频、逐字转写和语言，用于 continuation 或 x-vector 克隆。",
   "T8_DotsTTS_Sampling": "配置 SOAR 采样参数；固定步数模型会自动锁定官方参数。",
-  "T8_DotsTTS_SpeakerMap": "把字幕角色映射到最多四个音色，并支持默认回退音色。",
+  "T8_DotsTTS_SpeakerMap": "用 A-D 槽或 JSON 音色库映射任意数量字幕角色，并支持默认回退音色。",
   "T8_DotsTTS_Pronunciation": "覆盖数字、人名与专有词的朗读文本。",
   "T8_DotsTTS_Generate": "使用 dots.tts 生成标准 48 kHz ComfyUI AUDIO。",
   "T8_DotsTTS_LongText": "按模型 token 数切分长文本，支持显式停顿并拼接标准 48 kHz AUDIO。",
-  "T8_DotsTTS_Project": "渲染可重试、可断点续做的 TXT/SRT/VTT 多角色工程。",
-  "T8_DotsTTS_BatchQueue": "递归处理 TXT/SRT/VTT 文件与文件夹并导出批量 ZIP。",
+  "T8_DotsTTS_Project": "渲染带字幕时长适配、媒体导出、重试和断点续做的 TXT/SRT/VTT 多角色工程。",
+  "T8_DotsTTS_BatchQueue": "递归处理 TXT/SRT/VTT，支持失败项重跑并导出批量 ZIP。",
   "T8_DotsTTS_Environment": "只读诊断 Python、依赖、CUDA 和模型缓存。",
   "T8_DotsTTS_Release": "释放本节点持有的模型和 CUDA 缓存。"
 }

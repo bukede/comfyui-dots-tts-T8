@@ -121,8 +121,10 @@ def test_project_runner_retries_and_resumes_each_segment(tmp_path: Path) -> None
     assert audio.shape[0] == 2500
     checkpoint = json.loads(Path(result.checkpoint_path).read_text(encoding="utf-8"))
     assert checkpoint["segments"]["0"]["attempts"] == 2
-    assert Path(result.subtitle_path).read_text(encoding="utf-8").startswith(
-        "1\n00:00:00,000 --> 00:00:01,000"
+    assert (
+        Path(result.subtitle_path)
+        .read_text(encoding="utf-8")
+        .startswith("1\n00:00:00,000 --> 00:00:01,000")
     )
 
     def should_not_run(*args):

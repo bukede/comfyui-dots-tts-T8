@@ -60,10 +60,8 @@ def parse_timestamp(value: str) -> int:
     if parts["minutes"] >= 60 or parts["seconds"] >= 60:
         raise ValueError(f"Invalid subtitle timestamp: {value!r}")
     return (
-        ((parts["hours"] * 60 + parts["minutes"]) * 60 + parts["seconds"])
-        * 1000
-        + parts["milliseconds"]
-    )
+        (parts["hours"] * 60 + parts["minutes"]) * 60 + parts["seconds"]
+    ) * 1000 + parts["milliseconds"]
 
 
 def format_timestamp(milliseconds: int, *, decimal: str = ",") -> str:
@@ -111,9 +109,7 @@ def parse_subtitles(text: str) -> tuple[SubtitleCue, ...]:
         start_ms = parse_timestamp(timeline.group("start"))
         end_ms = parse_timestamp(timeline.group("end"))
         if end_ms <= start_ms:
-            raise ValueError(
-                f"Subtitle block {block_number} must end after it starts."
-            )
+            raise ValueError(f"Subtitle block {block_number} must end after it starts.")
         cue_id = (
             lines[timeline_index - 1].strip()
             if timeline_index > 0
@@ -140,7 +136,9 @@ def parse_subtitles(text: str) -> tuple[SubtitleCue, ...]:
 
 def parse_plain_text(text: str) -> tuple[PlainTextSegment, ...]:
     normalized = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
-    blocks = [block.strip() for block in re.split(r"\n\s*\n", normalized) if block.strip()]
+    blocks = [
+        block.strip() for block in re.split(r"\n\s*\n", normalized) if block.strip()
+    ]
     segments: list[PlainTextSegment] = []
     for block in blocks:
         lines = [line.strip() for line in block.splitlines() if line.strip()]

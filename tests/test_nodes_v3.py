@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -75,6 +76,16 @@ def test_project_nodes_expose_audio_outputs_and_validate_inputs() -> None:
 
     assert project_schema.outputs[0].io_type == "AUDIO"
     assert batch_schema.outputs[0].io_type == "AUDIO"
+    project_inputs = {item.id for item in project_schema.inputs}
+    batch_inputs = {item.id for item in batch_schema.inputs}
+    assert {
+        "subtitle_fit_mode",
+        "audio_formats",
+        "target_lufs",
+        "video_path",
+        "ffmpeg_path",
+    } <= project_inputs
+    assert "retry_failed_only" in batch_inputs
     assert (
         module.T8DotsTTSProject.validate_inputs(
             "旁白：hello", "demo.txt", "text", "", 120, 200, 2
@@ -100,10 +111,30 @@ def test_speaker_map_and_pronunciation_helpers() -> None:
     output = module.T8DotsTTSSpeakerMap.execute('{"旁白":"A"}', voice_a=voice)
     speaker_map = output[0]
     assert speaker_map.voices["旁白"] is voice
-    processed = module.T8DotsTTSPronunciation.execute(
-        "2026 年", "2026 => 二零二六"
-    )
+    processed = module.T8DotsTTSPronunciation.execute("2026 年", "2026 => 二零二六")
     assert processed[0] == "二零二六 年"
+
+
+def test_speaker_map_loads_unlimited_file_voice_library(tmp_path: Path) -> None:
+    np = pytest.importorskip("numpy")
+    sf = pytest.importorskip("soundfile")
+    module = _load_nodes_module()
+    voices = {}
+    for index in range(6):
+        audio_path = tmp_path / f"voice-{index}.wav"
+        sf.write(audio_path, np.ones(100, dtype=np.float32) * 0.01, 1000)
+        voices[f"角色{index}"] = {
+            "audio": str(audio_path),
+            "transcript": f"参考文本{index}",
+            "language": "ZH",
+        }
+    output = module.T8DotsTTSSpeakerMap.execute(
+        "{}", voice_library=json.dumps({"name": "六角色", "voices": voices})
+    )
+    speaker_map = output[0]
+    info = json.loads(output[1])
+    assert len(speaker_map.voices) == 6
+    assert info["speaker_count"] == 6
 
 
 def test_model_selector_keeps_both_types_without_local_weights() -> None:

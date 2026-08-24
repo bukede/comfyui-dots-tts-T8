@@ -22,6 +22,12 @@
       "segment_gap_ms": 200,
       "max_retries": 2,
       "resume": true,
+      "retry_failed_only": false,
+      "subtitle_fit_mode": "shrink",
+      "audio_formats": "wav,flac",
+      "target_lufs": -16.0,
+      "video_path": "",
+      "ffmpeg_path": "",
       "output_dir": ""
     }
   },

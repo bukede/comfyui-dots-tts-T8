@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "dots-tts-voice-library",
+  "name": "六角色示例",
+  "voices": {
+    "旁白": {"audio": "D:/voices/narrator.wav", "transcript": "旁白参考音频逐字转写", "language": "ZH"},
+    "角色一": {"audio": "D:/voices/role-01.wav", "transcript": "角色一参考音频逐字转写", "language": "ZH"},
+    "角色二": {"audio": "D:/voices/role-02.wav", "transcript": "", "language": "ZH"},
+    "角色三": {"audio": "D:/voices/role-03.wav", "transcript": "", "language": "ZH"},
+    "角色四": {"audio": "D:/voices/role-04.wav", "transcript": "", "language": "ZH"},
+    "角色五": {"audio": "D:/voices/role-05.wav", "transcript": "", "language": "ZH"}
+  }
+}

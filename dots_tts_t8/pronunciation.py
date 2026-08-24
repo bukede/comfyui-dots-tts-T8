@@ -120,7 +120,9 @@ def parse_pronunciation_rules(
                     )
                 match, replacement = line.split(delimiter, 1)
                 rules.append(
-                    PronunciationRule(match=match.strip(), replacement=replacement.strip())
+                    PronunciationRule(
+                        match=match.strip(), replacement=replacement.strip()
+                    )
                 )
 
     seen: set[tuple[str, str, bool]] = set()

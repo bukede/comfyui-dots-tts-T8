@@ -22,12 +22,14 @@ if str(_NODE_ROOT) not in sys.path:
 
 from dots_tts_t8 import __version__
 from dots_tts_t8.environment import inspect_environment
+from dots_tts_t8.media import parse_audio_formats
 from dots_tts_t8.model_catalog import ModelCatalog
 from dots_tts_t8.production import build_production_plan
 from dots_tts_t8.pronunciation import (
     apply_pronunciation,
     parse_pronunciation_rules,
 )
+from dots_tts_t8.templates import parse_voice_library
 
 from .runtime.inference_adapter import (
     release_model,
@@ -337,7 +339,8 @@ class T8DotsTTSSpeakerMap(io.ComfyNode):
             display_name="dots.tts 多角色音色映射 · T8star-Aix",
             category=CATEGORY,
             description=(
-                "把字幕中的角色名映射到 A-D 四个音色；未命中角色使用默认音色。"
+                "把字幕角色映射到 A-D 槽位，或从 JSON 音色库加载任意数量的"
+                "本地参考音频；未命中角色使用默认音色。"
             ),
             inputs=[
                 io.String.Input(
@@ -345,6 +348,13 @@ class T8DotsTTSSpeakerMap(io.ComfyNode):
                     display_name="角色到槽位 JSON",
                     multiline=True,
                     default='{"旁白":"A","小明":"B"}',
+                ),
+                io.String.Input(
+                    "voice_library",
+                    display_name="音色库 JSON / 文件路径（可选）",
+                    multiline=True,
+                    default="",
+                    advanced=True,
                 ),
                 VoiceType.Input("voice_a", display_name="音色 A", optional=True),
                 VoiceType.Input("voice_b", display_name="音色 B", optional=True),
@@ -361,15 +371,22 @@ class T8DotsTTSSpeakerMap(io.ComfyNode):
         )
 
     @classmethod
-    def validate_inputs(cls, mapping_json: str, **kwargs) -> bool | str:
+    def validate_inputs(
+        cls, mapping_json: str, voice_library: str = "", **kwargs
+    ) -> bool | str:
         try:
             value = json.loads(mapping_json or "{}")
             if not isinstance(value, dict):
                 return "角色到槽位 JSON 必须是对象。"
             for speaker, slot in value.items():
                 selected = slot.get("slot") if isinstance(slot, dict) else slot
-                if str(selected).upper() not in {"A", "B", "C", "D"}:
-                    return f"角色 {speaker!r} 的槽位必须是 A/B/C/D。"
+                has_audio = isinstance(slot, dict) and bool(
+                    slot.get("audio", slot.get("prompt_audio_path"))
+                )
+                if not has_audio and str(selected).upper() not in {"A", "B", "C", "D"}:
+                    return f"角色 {speaker!r} 必须使用 A-D 槽位或本地 audio。"
+            if voice_library.strip():
+                parse_voice_library(voice_library)
             return True
         except Exception as exc:
             return f"角色映射 JSON 无效：{exc}"
@@ -378,34 +395,77 @@ class T8DotsTTSSpeakerMap(io.ComfyNode):
     def execute(
         cls,
         mapping_json: str,
+        voice_library: str = "",
         voice_a: VoicePrompt | None = None,
         voice_b: VoicePrompt | None = None,
         voice_c: VoicePrompt | None = None,
         voice_d: VoicePrompt | None = None,
         fallback_voice: VoicePrompt | None = None,
     ) -> io.NodeOutput:
-        value = json.loads(mapping_json or "{}")
+        value: dict = {}
+        library_base = Path.cwd()
+        if voice_library.strip():
+            library = parse_voice_library(voice_library)
+            value.update(library.voices)
+            candidate = Path(voice_library.strip()).expanduser()
+            if candidate.is_file():
+                library_base = candidate.resolve().parent
+        value.update(json.loads(mapping_json or "{}"))
         slots = {"A": voice_a, "B": voice_b, "C": voice_c, "D": voice_d}
         voices: dict[str, VoicePrompt] = {}
+        sources: dict[str, str] = {}
         for raw_speaker, raw_slot in value.items():
             speaker = str(raw_speaker).strip()
             selected = raw_slot.get("slot") if isinstance(raw_slot, dict) else raw_slot
             slot = str(selected).upper()
-            voice = slots.get(slot)
             if not speaker:
                 raise ValueError("角色名不能为空。")
-            if voice is None:
-                raise ValueError(f"角色 {speaker!r} 使用的音色槽 {slot} 未连接。")
+            audio_value = (
+                raw_slot.get("audio", raw_slot.get("prompt_audio_path"))
+                if isinstance(raw_slot, dict)
+                else None
+            )
+            if audio_value:
+                audio_path = Path(str(audio_value)).expanduser()
+                if not audio_path.is_absolute():
+                    audio_path = library_base / audio_path
+                audio_path = audio_path.resolve()
+                if not audio_path.is_file():
+                    raise FileNotFoundError(
+                        f"角色 {speaker!r} 的参考音频不存在：{audio_path}"
+                    )
+                import soundfile as sf
+                import torch
+
+                waveform, sample_rate = sf.read(
+                    audio_path, dtype="float32", always_2d=True
+                )
+                voice = VoicePrompt(
+                    audio={
+                        "waveform": torch.from_numpy(waveform.T.copy()).unsqueeze(0),
+                        "sample_rate": int(sample_rate),
+                    },
+                    transcript=str(
+                        raw_slot.get("transcript", raw_slot.get("prompt_text", ""))
+                    ),
+                    language=str(raw_slot.get("language", "ZH")) or "ZH",
+                )
+                sources[speaker] = str(audio_path)
+            else:
+                voice = slots.get(slot)
+                if voice is None:
+                    raise ValueError(f"角色 {speaker!r} 使用的音色槽 {slot} 未连接。")
+                sources[speaker] = slot
             voices[speaker] = voice
         speaker_map = SpeakerVoiceMap(voices=voices, fallback=fallback_voice)
         info = {
-            "speakers": {
-                speaker: str(slot.get("slot") if isinstance(slot, dict) else slot).upper()
-                for speaker, slot in value.items()
-            },
+            "speakers": {speaker: sources[speaker] for speaker in voices},
+            "speaker_count": len(voices),
             "has_fallback": fallback_voice is not None,
         }
-        return io.NodeOutput(speaker_map, json.dumps(info, ensure_ascii=False, indent=2))
+        return io.NodeOutput(
+            speaker_map, json.dumps(info, ensure_ascii=False, indent=2)
+        )
 
 
 class T8DotsTTSPronunciation(io.ComfyNode):
@@ -418,7 +478,10 @@ class T8DotsTTSPronunciation(io.ComfyNode):
             description="覆盖数字、人名和专有词读音；支持 JSON 或 `原文 => 读法`。",
             inputs=[
                 io.String.Input(
-                    "text", display_name="原文本", multiline=True, default="2026 年，T8 发布。"
+                    "text",
+                    display_name="原文本",
+                    multiline=True,
+                    default="2026 年，T8 发布。",
                 ),
                 io.String.Input(
                     "dictionary",
@@ -643,8 +706,7 @@ class T8DotsTTSProject(io.ComfyNode):
                     display_name="TXT / SRT / VTT 内容",
                     multiline=True,
                     default=(
-                        "1\n00:00:00,000 --> 00:00:02,000\n"
-                        "[旁白] 2026 年，T8 发布。"
+                        "1\n00:00:00,000 --> 00:00:02,000\n" "[旁白] 2026 年，T8 发布。"
                     ),
                     dynamic_prompts=True,
                 ),
@@ -698,8 +760,38 @@ class T8DotsTTSProject(io.ComfyNode):
                     min=0,
                     max=10,
                 ),
-                io.Boolean.Input(
-                    "resume", display_name="断点续做", default=True
+                io.Boolean.Input("resume", display_name="断点续做", default=True),
+                io.Combo.Input(
+                    "subtitle_fit_mode",
+                    display_name="字幕时长适配",
+                    options=["shrink", "fit", "none", "trim"],
+                    default="shrink",
+                ),
+                io.String.Input(
+                    "audio_formats",
+                    display_name="导出格式",
+                    default="wav",
+                    tooltip="逗号分隔：wav,mp3,flac",
+                ),
+                io.Float.Input(
+                    "target_lufs",
+                    display_name="目标 LUFS（0=关闭）",
+                    default=0.0,
+                    min=-36.0,
+                    max=0.0,
+                    step=0.5,
+                ),
+                io.String.Input(
+                    "video_path",
+                    display_name="可选视频路径",
+                    default="",
+                    advanced=True,
+                ),
+                io.String.Input(
+                    "ffmpeg_path",
+                    display_name="FFmpeg 路径（留空自动）",
+                    default="",
+                    advanced=True,
                 ),
                 io.String.Input(
                     "output_dir",
@@ -728,6 +820,9 @@ class T8DotsTTSProject(io.ComfyNode):
         max_segment_tokens: int,
         segment_gap_ms: int,
         max_retries: int,
+        subtitle_fit_mode: str = "shrink",
+        audio_formats: str = "wav",
+        target_lufs: float = 0.0,
         **kwargs,
     ) -> bool | str:
         if not str(source_text).strip():
@@ -737,6 +832,11 @@ class T8DotsTTSProject(io.ComfyNode):
         if int(segment_gap_ms) < 0 or int(max_retries) < 0:
             return "段间停顿和重试次数不能为负数。"
         try:
+            parse_audio_formats(audio_formats)
+            if subtitle_fit_mode not in {"none", "shrink", "fit", "trim"}:
+                return "字幕时长适配模式无效。"
+            if float(target_lufs) != 0.0 and not -36.0 <= float(target_lufs) <= -5.0:
+                return "目标 LUFS 必须为 0（关闭）或 -36 至 -5。"
             build_production_plan(
                 project_name or "project.txt",
                 source_text,
@@ -762,6 +862,11 @@ class T8DotsTTSProject(io.ComfyNode):
         max_retries: int,
         resume: bool,
         output_dir: str,
+        subtitle_fit_mode: str = "shrink",
+        audio_formats: str = "wav",
+        target_lufs: float = 0.0,
+        video_path: str = "",
+        ffmpeg_path: str = "",
         speaker_map: SpeakerVoiceMap | None = None,
         sampling: SamplingConfig | None = None,
     ) -> io.NodeOutput:
@@ -780,6 +885,11 @@ class T8DotsTTSProject(io.ComfyNode):
             max_retries=int(max_retries),
             resume=bool(resume),
             output_root=_project_output_root(output_dir),
+            subtitle_fit_mode=subtitle_fit_mode,
+            audio_formats=audio_formats,
+            target_lufs=float(target_lufs) if float(target_lufs) <= -5.0 else None,
+            video_path=video_path.strip() or None,
+            ffmpeg_path=ffmpeg_path.strip() or None,
         )
         return io.NodeOutput(audio, json.dumps(info, ensure_ascii=False, indent=2))
 
@@ -842,6 +952,41 @@ class T8DotsTTSBatchQueue(io.ComfyNode):
                     max=10,
                 ),
                 io.Boolean.Input("resume", display_name="断点续做", default=True),
+                io.Boolean.Input(
+                    "retry_failed_only", display_name="只重跑失败项", default=False
+                ),
+                io.Combo.Input(
+                    "subtitle_fit_mode",
+                    display_name="字幕时长适配",
+                    options=["shrink", "fit", "none", "trim"],
+                    default="shrink",
+                ),
+                io.String.Input(
+                    "audio_formats",
+                    display_name="导出格式",
+                    default="wav",
+                    tooltip="逗号分隔：wav,mp3,flac",
+                ),
+                io.Float.Input(
+                    "target_lufs",
+                    display_name="目标 LUFS（0=关闭）",
+                    default=0.0,
+                    min=-36.0,
+                    max=0.0,
+                    step=0.5,
+                ),
+                io.String.Input(
+                    "video_path",
+                    display_name="单工程可选视频路径",
+                    default="",
+                    advanced=True,
+                ),
+                io.String.Input(
+                    "ffmpeg_path",
+                    display_name="FFmpeg 路径（留空自动）",
+                    default="",
+                    advanced=True,
+                ),
                 io.String.Input(
                     "output_dir",
                     display_name="工程输出目录（留空自动）",
@@ -867,6 +1012,9 @@ class T8DotsTTSBatchQueue(io.ComfyNode):
         max_segment_tokens: int,
         segment_gap_ms: int,
         max_retries: int,
+        subtitle_fit_mode: str = "shrink",
+        audio_formats: str = "wav",
+        target_lufs: float = 0.0,
         **kwargs,
     ) -> bool | str:
         if not any(line.strip() for line in str(input_paths).splitlines()):
@@ -875,6 +1023,14 @@ class T8DotsTTSBatchQueue(io.ComfyNode):
             return "每段最大 Tokens 必须大于 0。"
         if int(segment_gap_ms) < 0 or int(max_retries) < 0:
             return "段间停顿和重试次数不能为负数。"
+        try:
+            parse_audio_formats(audio_formats)
+        except Exception as exc:
+            return f"导出格式无效：{exc}"
+        if subtitle_fit_mode not in {"none", "shrink", "fit", "trim"}:
+            return "字幕时长适配模式无效。"
+        if float(target_lufs) != 0.0 and not -36.0 <= float(target_lufs) <= -5.0:
+            return "目标 LUFS 必须为 0（关闭）或 -36 至 -5。"
         return True
 
     @classmethod
@@ -890,6 +1046,12 @@ class T8DotsTTSBatchQueue(io.ComfyNode):
         max_retries: int,
         resume: bool,
         output_dir: str,
+        retry_failed_only: bool = False,
+        subtitle_fit_mode: str = "shrink",
+        audio_formats: str = "wav",
+        target_lufs: float = 0.0,
+        video_path: str = "",
+        ffmpeg_path: str = "",
         speaker_map: SpeakerVoiceMap | None = None,
         sampling: SamplingConfig | None = None,
     ) -> io.NodeOutput:
@@ -907,6 +1069,12 @@ class T8DotsTTSBatchQueue(io.ComfyNode):
             max_retries=int(max_retries),
             resume=bool(resume),
             output_root=_project_output_root(output_dir),
+            retry_failed_only=bool(retry_failed_only),
+            subtitle_fit_mode=subtitle_fit_mode,
+            audio_formats=audio_formats,
+            target_lufs=float(target_lufs) if float(target_lufs) <= -5.0 else None,
+            video_path=video_path.strip() or None,
+            ffmpeg_path=ffmpeg_path.strip() or None,
         )
         return io.NodeOutput(
             audio,

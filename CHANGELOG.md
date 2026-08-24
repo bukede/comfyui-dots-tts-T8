@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 - 2026-08-24
+
+- Added pitch-preserving subtitle duration fitting with complete timeline metrics.
+- Added unlimited file-backed speaker mappings through portable JSON voice libraries.
+- Added failed-only deterministic batch retries with configuration fingerprint checks.
+- Added WAV/MP3/FLAC, two-pass EBU R128 loudness, and video-remux controls.
+- Added portable voice-library/project-template helpers shared with the desktop app.
+- Preserved the 11 stable ComfyUI V3 node identifiers.
+
 ## 0.3.0 - 2026-08-24
 
 - Added SRT/WebVTT timeline rendering and speaker annotations.
