@@ -1,0 +1,39 @@
+{
+  "1": {
+    "class_type": "T8_DotsTTS_EditModelLoader",
+    "inputs": {
+      "model_name": "dots.tts Edit · Speech Editing [edit]",
+      "precision": "bfloat16",
+      "optimize": false,
+      "release_after_run": false,
+      "verify_hashes": false,
+      "custom_model_path": ""
+    }
+  },
+  "2": {
+    "class_type": "LoadAudio",
+    "inputs": {"audio": "edit_source.wav"}
+  },
+  "3": {
+    "class_type": "T8_DotsTTS_Edit",
+    "inputs": {
+      "model": ["1", 0],
+      "source_audio": ["2", 0],
+      "instruction": "你好，<sub targ=\"欢迎\">很高兴</sub>使用 dots.tts。",
+      "source_text": "",
+      "target_text": "",
+      "use_xvector": "auto",
+      "seed": 20260824,
+      "speaker_scale": 1.5,
+      "num_steps": 10,
+      "guidance_scale": 1.2
+    }
+  },
+  "4": {
+    "class_type": "SaveAudio",
+    "inputs": {
+      "audio": ["3", 0],
+      "filename_prefix": "dots_tts_T8/speech_edit"
+    }
+  }
+}

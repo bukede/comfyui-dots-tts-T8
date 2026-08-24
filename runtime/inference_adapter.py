@@ -25,7 +25,11 @@ from dots_tts_t8.production import (
 from dots_tts_t8.runtime_manager import RuntimeManager, RuntimeSpec
 from dots_tts_t8.text_planner import plan_speech
 
-from .audio_adapter import normalize_output_audio, prompt_audio_file
+from .audio_adapter import (
+    edit_source_audio_file,
+    normalize_output_audio,
+    prompt_audio_file,
+)
 from .types import ModelHandle, SamplingConfig, SpeakerVoiceMap, VoicePrompt
 
 _MANAGER = RuntimeManager()
@@ -59,6 +63,7 @@ def _resolve_inference(
         optimize=handle.optimize,
         max_generate_length=selected.max_generate_length,
         warmup_on_optimize=handle.optimize,
+        runtime_kind=artifact.runtime,
     )
     resolved_language = language
     if resolved_language == "inherit" and voice is not None:
@@ -165,6 +170,88 @@ def run_inference(
         if handle.release_after_run:
             _MANAGER.release()
         return audio, info
+
+
+def run_edit_inference(
+    *,
+    handle: ModelHandle,
+    source_audio: dict,
+    instruction: str,
+    source_text: str,
+    target_text: str,
+    use_xvector: str,
+    seed: int,
+    speaker_scale: float,
+    num_steps: int,
+    guidance_scale: float,
+    ode_method: str = "euler",
+    max_generate_length: int = 500,
+) -> tuple[dict, dict]:
+    artifact = ModelCatalog.load().get(handle.model_key)
+    if artifact.runtime != "edit":
+        raise ValueError("语音编辑节点必须使用 dots.tts.edit 模型。")
+    mode: bool | str
+    if use_xvector == "on":
+        mode = True
+    elif use_xvector == "off":
+        mode = False
+    elif use_xvector == "auto":
+        mode = "auto"
+    else:
+        raise ValueError("use_xvector 必须为 auto、on 或 off。")
+    spec = RuntimeSpec(
+        model_name_or_path=str(handle.model_dir),
+        precision=handle.precision,
+        optimize=handle.optimize,
+        max_generate_length=int(max_generate_length),
+        warmup_on_optimize=handle.optimize,
+        runtime_kind="edit",
+    )
+    with _LOCK, edit_source_audio_file(source_audio) as source_path:
+        try:
+            result = _MANAGER.generate_edit(
+                spec,
+                seed=int(seed),
+                source_audio_path=str(source_path),
+                instruction=instruction.strip(),
+                source_text=source_text.strip() or None,
+                target_text=target_text.strip() or None,
+                use_xvector=mode,
+                speaker_scale=float(speaker_scale),
+                ode_method=ode_method,
+                num_steps=int(num_steps),
+                guidance_scale=float(guidance_scale),
+            )
+            audio = normalize_output_audio(result["audio"], result["sample_rate"])
+            from dots_tts.data.edit_instruction import resolve_edit_use_xvector
+
+            effective_xvector = resolve_edit_use_xvector(mode, instruction.strip())
+            info = {
+                "model": artifact.repo_id,
+                "model_key": artifact.key,
+                "seed": int(seed),
+                "sample_rate": int(result["sample_rate"]),
+                "samples": int(audio["waveform"].shape[-1]),
+                "instruction": instruction.strip(),
+                "source_text": result.get("source_text"),
+                "target_text": result.get("target_text"),
+                "source_text_source": result.get("source_text_source"),
+                "target_text_source": result.get("target_text_source"),
+                "use_xvector_requested": use_xvector,
+                "use_xvector_effective": effective_xvector,
+                "speaker_scale": float(speaker_scale),
+                "ode_method": ode_method,
+                "num_steps": int(num_steps),
+                "guidance_scale": float(guidance_scale),
+                "max_generate_length": int(max_generate_length),
+                "duration_seconds": result.get("duration_seconds"),
+                "time_used": result.get("time_used"),
+                "rtf": result.get("rtf"),
+            }
+            return audio, info
+        finally:
+            if handle.release_after_run:
+                _MANAGER.release()
 
 
 def run_long_text_inference(

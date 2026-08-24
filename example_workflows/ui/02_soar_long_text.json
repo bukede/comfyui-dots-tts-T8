@@ -22,7 +22,7 @@
         {"name": "model", "type": "T8_DOTS_TTS_MODEL", "links": [1]},
         {"name": "model_info", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_ModelLoader", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_ModelLoader", "cnr_id": "dots-tts-t8", "ver": "0.6.0"},
       "widgets_values": ["dots.tts SOAR · Quality [soar]", "bfloat16", false, false, false, ""]
     },
     {
@@ -56,7 +56,7 @@
         {"name": "voice", "type": "T8_DOTS_TTS_VOICE", "links": [3]},
         {"name": "voice_info", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_VoicePrompt", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_VoicePrompt", "cnr_id": "dots-tts-t8", "ver": "0.6.0"},
       "widgets_values": ["请把这里改成参考音频的逐字转写。", "ZH"]
     },
     {
@@ -81,7 +81,7 @@
         {"name": "audio", "type": "AUDIO", "links": [4]},
         {"name": "generation_info", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_LongText", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_LongText", "cnr_id": "dots-tts-t8", "ver": "0.6.0"},
       "widgets_values": ["这是长文本的第一段。<pause=800ms>这是第二段，系统会按照模型 token 数继续智能切分并拼接。", "inherit", 20260823, "fixed", 120, 200]
     },
     {

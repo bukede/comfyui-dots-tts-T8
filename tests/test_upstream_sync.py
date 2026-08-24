@@ -7,6 +7,7 @@ import pytest
 
 NODE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = NODE_ROOT.parent
+INTENTIONAL_T8_DIVERGENCES = {Path("asr_sidecar.py")}
 
 
 def test_vendored_upstream_matches_pinned_source() -> None:
@@ -44,4 +45,6 @@ def test_vendored_t8_helpers_match_shared_source() -> None:
         )
     for source in source_root.rglob("*.py"):
         relative = source.relative_to(source_root)
+        if relative in INTENTIONAL_T8_DIVERGENCES:
+            continue
         assert (vendored_root / relative).read_bytes() == source.read_bytes(), relative

@@ -225,8 +225,8 @@ def render_timeline_html(
         for index, peak in enumerate(peaks):
             x = index * width / max(1, len(peaks) - 1)
             amplitude = peak / maximum * (waveform_height * 0.42)
-            points_top.append(f"{x:.1f},{center-amplitude:.1f}")
-            points_bottom.append(f"{x:.1f},{center+amplitude:.1f}")
+            points_top.append(f"{x:.1f},{center - amplitude:.1f}")
+            points_bottom.append(f"{x:.1f},{center + amplitude:.1f}")
         polygon = " ".join(points_top + list(reversed(points_bottom)))
         parts.append(f'<polygon points="{polygon}" fill="#38bdf8" opacity="0.68"/>')
     for second in range(0, int(duration) + 1, max(1, int(duration / 12) or 1)):
@@ -235,7 +235,7 @@ def render_timeline_html(
             f'<line x1="{x:.1f}" y1="0" x2="{x:.1f}" y2="{waveform_height}" stroke="#334155"/>'
         )
         parts.append(
-            f'<text x="{x+3:.1f}" y="14" fill="#cbd5e1" font-size="11">{second}s</text>'
+            f'<text x="{x + 3:.1f}" y="14" fill="#cbd5e1" font-size="11">{second}s</text>'
         )
     for lane, cue in enumerate(cues):
         y = waveform_height + lane * lane_height + 6
@@ -246,7 +246,7 @@ def render_timeline_html(
             f'<rect x="{x:.1f}" y="{y}" width="{rect_width:.1f}" height="26" rx="5" fill="{_speaker_color(cue.speaker)}" opacity="0.88"/>'
         )
         parts.append(
-            f'<text x="{x+5:.1f}" y="{y+18}" fill="#fff" font-size="12">{html.escape(label[:80])}</text>'
+            f'<text x="{x + 5:.1f}" y="{y + 18}" fill="#fff" font-size="12">{html.escape(label[:80])}</text>'
         )
     parts.extend(["</svg>", "</div>"])
     return "".join(parts)

@@ -7,6 +7,7 @@
 - `api/05_batch_queue.json`：递归处理 TXT/SRT/VTT 文件与文件夹。
 - `api/06_asr_transcribe.json`：自动转写、时间戳与可选说话人分离。
 - `api/07_timeline_normalize.json`：SRT/WebVTT/JSON 时间轴标准化。
+- `api/08_speech_edit.json`：用 dots.tts.edit 替换原音频中的局部内容。
 - `voice_library.example.json`：六角色本地参考音频库；可继续增加角色。
 - `ui/01_soar_voice_clone.json`：可拖入 ComfyUI 画布的基础克隆流程。
 - `ui/02_soar_long_text.json`：可拖入画布的长文本音色克隆流程。
@@ -34,3 +35,8 @@ v0.4 默认用 `shrink` 对超出字幕槽位的语音做保音高变速，并�
 v0.5 的 ASR 示例需要手动安装 `qwen-asr==0.0.6` 与
 `transformers==4.57.6`。首次运行会下载约 3.7 GB 固定 revision 权重并校验大小与
 SHA-256；启用说话人分离时还需连接 dots.tts 模型加载器。
+
+v0.6 的语音编辑示例需要把官方 `dots.tts.edit` 放到
+`ComfyUI/models/TTS/dots.tts/dots.tts.edit/`。指令支持 `<del>`、`<ins>`、
+`<sub targ="...">`、`<emo>`、`<pitch>`、`<rate>`、`<pause/>`、`<enhance>`、
+`<bg>` 与 `<spk_transfer/>`；原始/目标转写可留空并由结构化指令推导。

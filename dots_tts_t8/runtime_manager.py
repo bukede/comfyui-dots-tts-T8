@@ -19,12 +19,16 @@ class RuntimeSpec:
     max_generate_length: int = 500
     max_sequence_length: int = 2048
     warmup_on_optimize: bool = True
+    runtime_kind: str = "tts"
 
     def normalized(self) -> "RuntimeSpec":
         model = self.model_name_or_path.strip()
         if not model:
             raise ValueError("model_name_or_path cannot be empty.")
         cache_dir = str(Path(self.cache_dir).resolve()) if self.cache_dir else None
+        runtime_kind = self.runtime_kind.strip().lower() or "tts"
+        if runtime_kind not in {"tts", "edit"}:
+            raise ValueError(f"Unsupported runtime_kind: {self.runtime_kind!r}")
         return RuntimeSpec(
             model_name_or_path=model,
             revision=self.revision or None,
@@ -34,6 +38,7 @@ class RuntimeSpec:
             max_generate_length=int(self.max_generate_length),
             max_sequence_length=int(self.max_sequence_length),
             warmup_on_optimize=bool(self.warmup_on_optimize),
+            runtime_kind=runtime_kind,
         )
 
 
@@ -65,9 +70,12 @@ class RuntimeManager:
                 return self._runtime
             self._release_locked()
 
-            from dots_tts.runtime import DotsTtsRuntime
+            if normalized.runtime_kind == "edit":
+                from dots_tts.edit_runtime import DotsTtsEditRuntime as RuntimeClass
+            else:
+                from dots_tts.runtime import DotsTtsRuntime as RuntimeClass
 
-            runtime = DotsTtsRuntime.from_pretrained(
+            runtime = RuntimeClass.from_pretrained(
                 normalized.model_name_or_path,
                 revision=normalized.revision,
                 cache_dir=normalized.cache_dir,
@@ -90,6 +98,19 @@ class RuntimeManager:
 
             seed_everything(int(seed))
             return runtime.generate(**kwargs)
+
+    def generate_edit(
+        self, spec: RuntimeSpec, *, seed: int, **kwargs: Any
+    ) -> dict[str, Any]:
+        with self._lock:
+            normalized = spec.normalized()
+            if normalized.runtime_kind != "edit":
+                raise ValueError("generate_edit requires runtime_kind='edit'.")
+            runtime = self.load(normalized)
+            from dots_tts.utils.util import seed_everything
+
+            seed_everything(int(seed))
+            return runtime.generate_edit(**kwargs)
 
     def release(self) -> None:
         with self._lock:

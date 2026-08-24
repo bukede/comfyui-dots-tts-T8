@@ -12,17 +12,20 @@ except ModuleNotFoundError:  # Python 3.10
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_NODE_IDS = {
     "T8_DotsTTS_ModelLoader",
+    "T8_DotsTTS_EditModelLoader",
     "T8_DotsTTS_VoicePrompt",
     "T8_DotsTTS_Sampling",
     "T8_DotsTTS_SpeakerMap",
     "T8_DotsTTS_Pronunciation",
     "T8_DotsTTS_Generate",
+    "T8_DotsTTS_Edit",
     "T8_DotsTTS_LongText",
     "T8_DotsTTS_Project",
     "T8_DotsTTS_BatchQueue",
     "T8_DotsTTS_Transcribe",
     "T8_DotsTTS_Timeline",
     "T8_DotsTTS_Environment",
+    "T8_DotsTTS_Diagnostics",
     "T8_DotsTTS_Release",
 }
 PROTECTED_DEPENDENCIES = {

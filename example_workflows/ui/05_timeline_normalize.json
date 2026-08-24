@@ -18,7 +18,7 @@
         {"name": "srt", "type": "STRING", "links": []},
         {"name": "timeline_json", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_Timeline", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_Timeline", "cnr_id": "dots-tts-t8", "ver": "0.6.0"},
       "widgets_values": ["1\n00:00:00,000 --> 00:00:02,500\n[旁白] 第一段。\n\n2\n00:00:03,000 --> 00:00:05,500\n[角色] 第二段。", "srt"]
     }
   ],

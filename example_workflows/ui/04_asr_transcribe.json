@@ -39,7 +39,7 @@
         {"name": "model", "type": "T8_DOTS_TTS_MODEL", "links": [2]},
         {"name": "model_info", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_ModelLoader", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_ModelLoader", "cnr_id": "dots-tts-t8", "ver": "0.6.0"},
       "widgets_values": ["dots.tts MF 2-Steps · Fast [mf-2steps]", "bfloat16", false, false, false, ""]
     },
     {
@@ -66,7 +66,7 @@
         {"name": "timeline_json", "type": "STRING", "links": []},
         {"name": "asr_info", "type": "STRING", "links": []}
       ],
-      "properties": {"Node name for S&R": "T8_DotsTTS_Transcribe", "cnr_id": "dots-tts-t8", "ver": "0.5.0"},
+      "properties": {"Node name for S&R": "T8_DotsTTS_Transcribe", "cnr_id": "dots-tts-t8", "ver": "0.6.0"},
       "widgets_values": ["auto", true, 0, 0.72, "Qwen/Qwen3-ASR-0.6B", "Qwen/Qwen3-ForcedAligner-0.6B", "cuda:0"]
     }
   ],

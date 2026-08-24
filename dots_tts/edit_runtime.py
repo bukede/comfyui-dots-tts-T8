@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from pathlib import Path
 from typing import Any, Iterator, TypedDict
 
 import torch
@@ -17,11 +16,16 @@ from dots_tts.data.edit_instruction import (
 )
 from dots_tts.data.pipelines.tokenizing import build_edit_generation_schedule
 from dots_tts.models.dots_tts.edit_model import DotsTtsEditModel
-from dots_tts.runtime import DEFAULT_MAX_SEQUENCE_LENGTH, DotsTtsRuntime
+from dots_tts.runtime import DEFAULT_MAX_SEQUENCE_LENGTH, DotsTtsRuntime, RuntimeInputs
 from dots_tts.utils.audio import prepare_edit_source_audio
 from dots_tts.utils.logging import categorized_log as logc
-from dots_tts.utils.profiling import inference_profiling, log_inference_profile
-
+from dots_tts.utils.profiling import (
+    InferenceProfiler,
+    activate_inference_profiler,
+    inference_profiling,
+    log_inference_profile,
+)
+from dots_tts.utils.text import attach_language_tag
 
 EDIT_SOURCE_TEXT_PREFIX = "[原文本]"
 EDIT_SOURCE_AUDIO_PREFIX = "[原语音]"
@@ -120,7 +124,7 @@ class DotsTtsEditRuntime(DotsTtsRuntime):
         target_patch_count = self.max_generate_length - source_patch_count
         source_text = "预热"
         target_text = "热"
-        instruction = '<del>预</del>热'
+        instruction = "<del>预</del>热"
         schedule_spec = build_edit_generation_schedule(
             source_text=source_text,
             target_text=target_text,
@@ -778,9 +782,7 @@ class DotsTtsEditRuntime(DotsTtsRuntime):
             "duration_seconds": duration_seconds,
             "time_used": time_used,
             "rtf": (
-                time_used / duration_seconds
-                if duration_seconds > 0
-                else float("inf")
+                time_used / duration_seconds if duration_seconds > 0 else float("inf")
             ),
             "profiling": profiling,
             "source_text": inputs["source_text"],

@@ -9,12 +9,13 @@ NODE_ROOT = Path(__file__).resolve().parents[1]
 if str(NODE_ROOT) not in sys.path:
     sys.path.insert(0, str(NODE_ROOT))
 
-from dots_tts_t8.model_download import download_model
+from dots_tts_t8.model_catalog import ModelCatalog  # noqa: E402
+from dots_tts_t8.model_download import download_model  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Download pinned dots.tts models.")
-    parser.add_argument("--model", choices=("soar", "mf-2steps"), default="soar")
+    parser.add_argument("--model", choices=ModelCatalog.load().keys(), default="soar")
     parser.add_argument("--comfyui-root", type=Path, required=True)
     parser.add_argument(
         "--endpoint",
@@ -27,11 +28,11 @@ def main() -> int:
         args.model,
         target,
         endpoint=args.endpoint,
-        progress=lambda event: print(
-            json.dumps(event, ensure_ascii=False), flush=True
-        ),
+        progress=lambda event: print(json.dumps(event, ensure_ascii=False), flush=True),
     )
-    print(json.dumps({"path": str(path), "report": report.as_dict()}, ensure_ascii=False))
+    print(
+        json.dumps({"path": str(path), "report": report.as_dict()}, ensure_ascii=False)
+    )
     return 0
 
 

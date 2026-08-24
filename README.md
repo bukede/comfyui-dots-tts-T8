@@ -7,17 +7,20 @@ dots.tts 的 ComfyUI V3 原生节点，作者与发布者：T8star-Aix。
 ## 节点
 
 - dots.tts 模型加载器
+- dots.tts Edit 模型加载器
 - dots.tts 音色提示
 - dots.tts 采样配置
 - dots.tts 多角色音色映射（A-D 音色槽 + 无限角色 JSON 音色库 + 默认回退）
 - dots.tts 发音词典（数字、人名与专有词覆盖）
 - dots.tts 语音生成
+- dots.tts 语音编辑（替换、插入、删除、情绪、音高、语速、停顿、增强与背景）
 - dots.tts 长文本生成（智能分段、音频拼接、显式停顿）
 - dots.tts 字幕与多角色工程（时间轴适配、媒体导出、重试、断点续做）
 - dots.tts 批量任务队列（递归处理、失败项重跑与 ZIP 导出）
 - dots.tts ASR 转写与说话人分离（Qwen3-ASR + ForcedAligner + 可选 CAM++）
 - dots.tts 字幕时间轴标准化（SRT / WebVTT / JSON）
 - dots.tts 环境诊断
+- dots.tts 诊断包导出
 - dots.tts 释放模型
 
 支持官方 SOAR（质量优先）和 MF-2steps（速度优先）模型。生成节点输出标准
@@ -65,6 +68,10 @@ JSON 和完整识别报告。默认使用固定 revision 的 `Qwen/Qwen3-ASR-0.6
 SHA-256。启用说话人分离时，需要连接任意已发现的 dots.tts 模型；节点只读取其中的
 CAM++ `speaker_encoder.safetensors`，不会为分离加载完整 TTS 推理模型。
 
+默认 `auto` 会优先连接 T8 Windows 整合包自动启动的本机 ASR sidecar。sidecar 使用
+随机令牌、只绑定 loopback，并在独立 Python 进程中加载 Qwen3-ASR；转写后默认释放
+显存。这样 ComfyUI 主环境无需安装 `qwen-asr` 或替换 Transformers。
+
 ASR 是可选能力。为避免 ComfyUI Manager 自动升级核心 `transformers`，它不在
 `requirements.txt` 中。请先备份 ComfyUI 环境，再使用启动 ComfyUI 的同一个 Python
 手动安装与本节点验证版本一致的组件：
@@ -74,7 +81,8 @@ python -m pip install "qwen-asr==0.0.6" "transformers==4.57.6"
 ```
 
 若其他节点不兼容该 Transformers 版本，可保留桌面整合包中的 ASR，ComfyUI 侧只用
-TTS 节点。“字幕时间轴标准化”节点可校验 SRT、WebVTT 或本项目 JSON，重新输出统一
+TTS 节点。没有桌面 sidecar 时，可明确选择 `in_process_legacy` 并按上面的固定版本
+手动安装。“字幕时间轴标准化”节点可校验 SRT、WebVTT 或本项目 JSON，重新输出统一
 SRT/JSON；两个节点都可作为队列终点并直接预览字幕文本。
 
 ## 通过 ComfyUI Manager 安装（推荐）
@@ -117,6 +125,7 @@ python -m pip install "transformers>=4.57,<5"
 ```text
 ComfyUI/models/TTS/dots.tts/dots.tts-soar/
 ComfyUI/models/TTS/dots.tts/dots.tts-mf-2steps/
+ComfyUI/models/TTS/dots.tts/dots.tts.edit/
 ```
 
 也支持 `extra_model_paths.yaml` 中登记的 `TTS` 路径，以及已有社区节点使用的
@@ -132,6 +141,12 @@ python scripts/download_models.py --model soar --comfyui-root D:\ComfyUI
 
 ```powershell
 python scripts/download_models.py --model mf-2steps --comfyui-root D:\ComfyUI
+```
+
+下载 dots.tts Edit：
+
+```powershell
+python scripts/download_models.py --model edit --comfyui-root D:\ComfyUI
 ```
 
 下载器固定官方仓库 revision，支持 Hugging Face/Xet 缓存，并在完成后校验文件尺寸

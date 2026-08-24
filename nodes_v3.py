@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -21,6 +22,7 @@ if str(_NODE_ROOT) not in sys.path:
     sys.path.insert(0, str(_NODE_ROOT))
 
 from dots_tts_t8 import __version__
+from dots_tts_t8.diagnostics import write_diagnostic_bundle
 from dots_tts_t8.environment import inspect_environment
 from dots_tts_t8.media import parse_audio_formats
 from dots_tts_t8.model_catalog import ModelCatalog
@@ -36,6 +38,7 @@ from dots_tts_t8.timeline import rows_to_cues, timeline_document
 from .runtime.inference_adapter import (
     release_model,
     run_batch_inference,
+    run_edit_inference,
     run_inference,
     run_long_text_inference,
     run_project_inference,
@@ -54,6 +57,7 @@ from .runtime.types import ModelHandle, SamplingConfig, SpeakerVoiceMap, VoicePr
 LOGGER = logging.getLogger("comfyui-dots-tts-T8")
 CATEGORY = "T8star-Aix/Audio/dots.tts"
 ModelType = io.Custom("T8_DOTS_TTS_MODEL")
+EditModelType = io.Custom("T8_DOTS_TTS_EDIT_MODEL")
 VoiceType = io.Custom("T8_DOTS_TTS_VOICE")
 SamplingType = io.Custom("T8_DOTS_TTS_SAMPLING")
 SpeakerMapType = io.Custom("T8_DOTS_TTS_SPEAKER_MAP")
@@ -214,6 +218,125 @@ class T8DotsTTSModelLoader(io.ComfyNode):
                 "num_steps": artifact.sampling.num_steps,
                 "guidance_scale": artifact.sampling.guidance_scale,
             },
+        }
+        return io.NodeOutput(handle, json.dumps(info, ensure_ascii=False, indent=2))
+
+
+class T8DotsTTSEditModelLoader(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        options = model_options(runtime="edit")
+        return io.Schema(
+            node_id="T8_DotsTTS_EditModelLoader",
+            display_name="dots.tts Edit 模型加载器 · T8star-Aix",
+            category=CATEGORY,
+            search_aliases=["dots.tts.edit", "speech edit", "语音编辑"],
+            description="发现并校验官方 dots.tts.edit；权重在首次编辑时惰性加载。",
+            inputs=[
+                io.Combo.Input(
+                    "model_name",
+                    display_name="编辑模型",
+                    options=options,
+                    default=options[0],
+                ),
+                io.Combo.Input(
+                    "precision",
+                    display_name="精度",
+                    options=["bfloat16", "float32"],
+                    default="bfloat16",
+                ),
+                io.Boolean.Input(
+                    "optimize",
+                    display_name="Torch Compile 加速",
+                    default=False,
+                    tooltip="默认关闭；首次编译很慢，失败时请关闭。",
+                ),
+                io.Boolean.Input(
+                    "release_after_run",
+                    display_name="编辑后释放模型",
+                    default=False,
+                    advanced=True,
+                ),
+                io.Boolean.Input(
+                    "verify_hashes",
+                    display_name="完整 SHA-256 校验",
+                    default=False,
+                    advanced=True,
+                ),
+                io.String.Input(
+                    "custom_model_path",
+                    display_name="自定义编辑模型绝对路径",
+                    default="",
+                    optional=True,
+                    advanced=True,
+                ),
+            ],
+            outputs=[
+                EditModelType.Output("model", display_name="dots.tts Edit 模型"),
+                io.String.Output("model_info", display_name="模型信息 JSON"),
+            ],
+        )
+
+    @classmethod
+    def fingerprint_inputs(
+        cls,
+        model_name: str,
+        precision: str,
+        optimize: bool,
+        release_after_run: bool,
+        verify_hashes: bool,
+        custom_model_path: str = "",
+    ) -> str:
+        try:
+            key, path = resolve_model(model_name, custom_model_path)
+            return model_fingerprint(key, path)
+        except Exception as exc:
+            return f"missing:{model_name}:{custom_model_path}:{exc}"
+
+    @classmethod
+    def validate_inputs(
+        cls, model_name: str, custom_model_path: str = "", **kwargs
+    ) -> bool | str:
+        try:
+            key, _path = resolve_model(model_name, custom_model_path)
+            if ModelCatalog.load().get(key).runtime != "edit":
+                return "请选择 dots.tts.edit 模型。"
+            return True
+        except Exception as exc:
+            return str(exc)
+
+    @classmethod
+    def execute(
+        cls,
+        model_name: str,
+        precision: str,
+        optimize: bool,
+        release_after_run: bool,
+        verify_hashes: bool,
+        custom_model_path: str = "",
+    ) -> io.NodeOutput:
+        key, model_dir = resolve_model(model_name, custom_model_path)
+        artifact = ModelCatalog.load().get(key)
+        if artifact.runtime != "edit":
+            raise ValueError("请选择 dots.tts.edit 模型。")
+        report = validate_model(key, model_dir, check_hashes=verify_hashes)
+        if not report.valid:
+            raise RuntimeError(json.dumps(report.as_dict(), ensure_ascii=False))
+        handle = ModelHandle(
+            model_key=key,
+            model_dir=Path(model_dir),
+            precision=precision,
+            optimize=bool(optimize),
+            release_after_run=bool(release_after_run),
+        )
+        info = {
+            "model_key": key,
+            "repo_id": artifact.repo_id,
+            "revision": artifact.revision,
+            "runtime": artifact.runtime,
+            "directory": str(model_dir),
+            "precision": precision,
+            "optimize": bool(optimize),
         }
         return io.NodeOutput(handle, json.dumps(info, ensure_ascii=False, indent=2))
 
@@ -586,6 +709,168 @@ class T8DotsTTSGenerate(io.ComfyNode):
         return io.NodeOutput(audio, json.dumps(info, ensure_ascii=False, indent=2))
 
 
+class T8DotsTTSEdit(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="T8_DotsTTS_Edit",
+            display_name="dots.tts 语音编辑 · T8star-Aix",
+            category=CATEGORY,
+            essentials_category="Audio",
+            search_aliases=["speech edit", "replace speech", "语音编辑"],
+            description=(
+                "按官方标签指令编辑局部语音，支持替换、插入、删除、情绪、"
+                "音高、语速、停顿、增强和背景音操作。"
+            ),
+            inputs=[
+                EditModelType.Input("model", display_name="dots.tts Edit 模型"),
+                io.Audio.Input("source_audio", display_name="原始音频"),
+                io.String.Input(
+                    "instruction",
+                    display_name="编辑指令",
+                    multiline=True,
+                    default='你好，<sub targ="欢迎">很高兴</sub>使用 dots.tts。',
+                    dynamic_prompts=True,
+                ),
+                io.String.Input(
+                    "source_text",
+                    display_name="原始转写（可选）",
+                    multiline=True,
+                    default="",
+                    optional=True,
+                ),
+                io.String.Input(
+                    "target_text",
+                    display_name="目标转写（可选）",
+                    multiline=True,
+                    default="",
+                    optional=True,
+                ),
+                io.Combo.Input(
+                    "use_xvector",
+                    display_name="原说话人引导",
+                    options=["auto", "on", "off"],
+                    default="auto",
+                ),
+                io.Int.Input(
+                    "seed",
+                    display_name="seed",
+                    default=42,
+                    min=0,
+                    max=0xFFFFFFFF,
+                    control_after_generate=True,
+                ),
+                io.Float.Input(
+                    "speaker_scale",
+                    display_name="说话人引导强度",
+                    default=1.5,
+                    min=0.0,
+                    max=5.0,
+                    step=0.05,
+                ),
+                io.Int.Input(
+                    "num_steps",
+                    display_name="采样步数",
+                    default=10,
+                    min=1,
+                    max=64,
+                ),
+                io.Float.Input(
+                    "guidance_scale",
+                    display_name="CFG",
+                    default=1.2,
+                    min=0.0,
+                    max=10.0,
+                    step=0.05,
+                ),
+                SamplingType.Input(
+                    "sampling",
+                    display_name="采样配置（可选，连接后覆盖上方参数）",
+                    optional=True,
+                ),
+            ],
+            outputs=[
+                io.Audio.Output("audio", display_name="编辑后音频"),
+                io.String.Output("target_text", display_name="目标转写"),
+                io.String.Output("edit_info", display_name="编辑信息 JSON"),
+            ],
+        )
+
+    @classmethod
+    def validate_inputs(
+        cls,
+        instruction: str,
+        use_xvector: str,
+        speaker_scale: float,
+        num_steps: int,
+        guidance_scale: float,
+        **kwargs,
+    ) -> bool | str:
+        if not str(instruction).strip():
+            return "编辑指令不能为空。"
+        try:
+            from dots_tts.data.edit_instruction import (
+                render_source_text,
+                render_target_text,
+            )
+
+            if not render_source_text(instruction).strip():
+                return "编辑指令推导出的原始转写不能为空。"
+            if not render_target_text(instruction).strip():
+                return "编辑指令推导出的目标转写不能为空。"
+        except Exception as exc:
+            return f"编辑指令格式无效：{exc}"
+        if use_xvector not in {"auto", "on", "off"}:
+            return "原说话人引导必须为 auto、on 或 off。"
+        if not 0.0 <= float(speaker_scale) <= 5.0:
+            return "说话人引导强度必须在 0–5。"
+        if not 1 <= int(num_steps) <= 64:
+            return "采样步数必须在 1–64。"
+        if not 0.0 <= float(guidance_scale) <= 10.0:
+            return "CFG 必须在 0–10。"
+        return True
+
+    @classmethod
+    def execute(
+        cls,
+        model: ModelHandle,
+        source_audio: dict,
+        instruction: str,
+        source_text: str,
+        target_text: str,
+        use_xvector: str,
+        seed: int,
+        speaker_scale: float,
+        num_steps: int,
+        guidance_scale: float,
+        sampling: SamplingConfig | None = None,
+    ) -> io.NodeOutput:
+        selected = sampling or SamplingConfig(
+            num_steps=int(num_steps),
+            guidance_scale=float(guidance_scale),
+            speaker_scale=float(speaker_scale),
+        )
+        audio, info = run_edit_inference(
+            handle=model,
+            source_audio=source_audio,
+            instruction=instruction,
+            source_text=source_text,
+            target_text=target_text,
+            use_xvector=use_xvector,
+            seed=int(seed),
+            speaker_scale=float(selected.speaker_scale),
+            num_steps=int(selected.num_steps),
+            guidance_scale=float(selected.guidance_scale),
+            ode_method=selected.ode_method,
+            max_generate_length=int(selected.max_generate_length),
+        )
+        return io.NodeOutput(
+            audio,
+            str(info.get("target_text") or ""),
+            json.dumps(info, ensure_ascii=False, indent=2),
+        )
+
+
 class T8DotsTTSLongText(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -709,7 +994,7 @@ class T8DotsTTSProject(io.ComfyNode):
                     display_name="TXT / SRT / VTT 内容",
                     multiline=True,
                     default=(
-                        "1\n00:00:00,000 --> 00:00:02,000\n" "[旁白] 2026 年，T8 发布。"
+                        "1\n00:00:00,000 --> 00:00:02,000\n[旁白] 2026 年，T8 发布。"
                     ),
                     dynamic_prompts=True,
                 ),
@@ -1114,9 +1399,7 @@ class T8DotsTTSTranscribe(io.ComfyNode):
                     ],
                     default="auto",
                 ),
-                io.Boolean.Input(
-                    "diarize", display_name="说话人分离", default=False
-                ),
+                io.Boolean.Input("diarize", display_name="说话人分离", default=False),
                 io.Int.Input(
                     "speaker_count",
                     display_name="说话人数（0=自动）",
@@ -1132,16 +1415,32 @@ class T8DotsTTSTranscribe(io.ComfyNode):
                     max=0.95,
                     step=0.01,
                 ),
-                io.String.Input(
+                io.Combo.Input(
                     "asr_model",
-                    display_name="ASR 模型或本地目录",
+                    display_name="固定 ASR 模型",
+                    options=["Qwen/Qwen3-ASR-0.6B"],
                     default="Qwen/Qwen3-ASR-0.6B",
                     advanced=True,
                 ),
-                io.String.Input(
+                io.Combo.Input(
                     "aligner_model",
-                    display_name="ForcedAligner 模型或本地目录",
+                    display_name="固定 ForcedAligner 模型",
+                    options=["Qwen/Qwen3-ForcedAligner-0.6B"],
                     default="Qwen/Qwen3-ForcedAligner-0.6B",
+                    advanced=True,
+                ),
+                io.Combo.Input(
+                    "transport",
+                    display_name="ASR 隔离方式",
+                    options=["auto", "sidecar", "in_process_legacy"],
+                    default="auto",
+                    tooltip="auto 优先连接桌面隔离服务；不可用时兼容进程内 ASR。",
+                    advanced=True,
+                ),
+                io.Boolean.Input(
+                    "release_after_run",
+                    display_name="转写后释放 ASR 显存",
+                    default=True,
                     advanced=True,
                 ),
                 io.Combo.Input(
@@ -1172,6 +1471,9 @@ class T8DotsTTSTranscribe(io.ComfyNode):
         similarity_threshold: float,
         diarize: bool,
         speaker_model: ModelHandle | None = None,
+        transport: str = "auto",
+        asr_model: str = "Qwen/Qwen3-ASR-0.6B",
+        aligner_model: str = "Qwen/Qwen3-ForcedAligner-0.6B",
         **kwargs,
     ) -> bool | str:
         if not 0 <= int(speaker_count) <= 32:
@@ -1180,6 +1482,12 @@ class T8DotsTTSTranscribe(io.ComfyNode):
             return "说话人相似度阈值必须在 0.4–0.95。"
         if diarize and speaker_model is None:
             return "启用说话人分离时必须连接 dots.tts 模型。"
+        if transport not in {"auto", "sidecar", "in_process_legacy"}:
+            return "ASR 隔离方式无效。"
+        if asr_model != "Qwen/Qwen3-ASR-0.6B":
+            return "ASR 模型必须使用固定清单版本。"
+        if aligner_model != "Qwen/Qwen3-ForcedAligner-0.6B":
+            return "ForcedAligner 必须使用固定清单版本。"
         return True
 
     @classmethod
@@ -1192,6 +1500,8 @@ class T8DotsTTSTranscribe(io.ComfyNode):
         similarity_threshold: float,
         asr_model: str,
         aligner_model: str,
+        transport: str,
+        release_after_run: bool,
         device: str,
         speaker_model: ModelHandle | None = None,
     ) -> io.NodeOutput:
@@ -1205,6 +1515,8 @@ class T8DotsTTSTranscribe(io.ComfyNode):
             similarity_threshold=float(similarity_threshold),
             device=device,
             speaker_model=speaker_model,
+            transport=transport,
+            release_after_run=bool(release_after_run),
         )
         timeline_json = json.dumps(
             {
@@ -1289,6 +1601,48 @@ class T8DotsTTSEnvironment(io.ComfyNode):
         return io.NodeOutput(json.dumps(report, ensure_ascii=False, indent=2))
 
 
+class T8DotsTTSDiagnostics(io.ComfyNode):
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="T8_DotsTTS_Diagnostics",
+            display_name="dots.tts 导出诊断包 · T8star-Aix",
+            category=CATEGORY,
+            description=("导出不含环境变量、令牌、音频、工作流和模型权重的支持 ZIP。"),
+            inputs=[
+                io.String.Input(
+                    "output_dir",
+                    display_name="输出目录（留空使用 ComfyUI output）",
+                    default="",
+                    optional=True,
+                    advanced=True,
+                )
+            ],
+            outputs=[
+                io.String.Output("bundle_path", display_name="诊断包路径"),
+                io.String.Output("report", display_name="诊断报告 JSON"),
+            ],
+            is_output_node=True,
+        )
+
+    @classmethod
+    def execute(cls, output_dir: str = "") -> io.NodeOutput:
+        root = (
+            Path(output_dir).expanduser().resolve()
+            if output_dir.strip()
+            else _project_output_root("").parent / "dots_tts_t8_diagnostics"
+        )
+        destination = root / f"dots-tts-T8-diagnostics-{int(time.time())}.zip"
+        path, report = write_diagnostic_bundle(
+            destination,
+            app="comfyui-dots-tts-T8",
+            version=__version__,
+            runtime=runtime_info(),
+        )
+        report_json = json.dumps(report, ensure_ascii=False, indent=2)
+        return io.NodeOutput(str(path), report_json, ui=ui.PreviewText(report_json))
+
+
 class T8DotsTTSRelease(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -1318,17 +1672,20 @@ class T8DotsTTSExtension(ComfyExtension):
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return [
             T8DotsTTSModelLoader,
+            T8DotsTTSEditModelLoader,
             T8DotsTTSVoicePrompt,
             T8DotsTTSSampling,
             T8DotsTTSSpeakerMap,
             T8DotsTTSPronunciation,
             T8DotsTTSGenerate,
+            T8DotsTTSEdit,
             T8DotsTTSLongText,
             T8DotsTTSProject,
             T8DotsTTSBatchQueue,
             T8DotsTTSTranscribe,
             T8DotsTTSTimeline,
             T8DotsTTSEnvironment,
+            T8DotsTTSDiagnostics,
             T8DotsTTSRelease,
         ]
 
@@ -1339,17 +1696,20 @@ async def comfy_entrypoint() -> T8DotsTTSExtension:
 
 __all__ = [
     "T8DotsTTSModelLoader",
+    "T8DotsTTSEditModelLoader",
     "T8DotsTTSVoicePrompt",
     "T8DotsTTSSampling",
     "T8DotsTTSSpeakerMap",
     "T8DotsTTSPronunciation",
     "T8DotsTTSGenerate",
+    "T8DotsTTSEdit",
     "T8DotsTTSLongText",
     "T8DotsTTSProject",
     "T8DotsTTSBatchQueue",
     "T8DotsTTSTranscribe",
     "T8DotsTTSTimeline",
     "T8DotsTTSEnvironment",
+    "T8DotsTTSDiagnostics",
     "T8DotsTTSRelease",
     "T8DotsTTSExtension",
     "comfy_entrypoint",

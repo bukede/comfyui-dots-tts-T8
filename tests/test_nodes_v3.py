@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -12,7 +13,12 @@ NODE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_nodes_module():
-    pytest.importorskip("comfy_api")
+    try:
+        import comfy_api  # noqa: F401
+    except ImportError:
+        if os.environ.get("T8_REQUIRE_COMFY_API") == "1":
+            raise
+        pytest.skip("ComfyUI V3 API is not available in this test environment.")
     package_name = "_dots_tts_t8_test"
     package = importlib.util.module_from_spec(
         importlib.util.spec_from_loader(package_name, loader=None, is_package=True)
@@ -36,17 +42,20 @@ def test_v3_extension_exposes_stable_node_ids() -> None:
 
     assert [schema.node_id for schema in schemas] == [
         "T8_DotsTTS_ModelLoader",
+        "T8_DotsTTS_EditModelLoader",
         "T8_DotsTTS_VoicePrompt",
         "T8_DotsTTS_Sampling",
         "T8_DotsTTS_SpeakerMap",
         "T8_DotsTTS_Pronunciation",
         "T8_DotsTTS_Generate",
+        "T8_DotsTTS_Edit",
         "T8_DotsTTS_LongText",
         "T8_DotsTTS_Project",
         "T8_DotsTTS_BatchQueue",
         "T8_DotsTTS_Transcribe",
         "T8_DotsTTS_Timeline",
         "T8_DotsTTS_Environment",
+        "T8_DotsTTS_Diagnostics",
         "T8_DotsTTS_Release",
     ]
 
@@ -58,6 +67,25 @@ def test_generate_uses_standard_audio_output() -> None:
     assert schema.outputs[0].io_type == "AUDIO"
     assert module.T8DotsTTSGenerate.validate_inputs("hello") is True
     assert isinstance(module.T8DotsTTSGenerate.validate_inputs("   "), str)
+
+
+def test_edit_nodes_use_dedicated_model_type_and_audio_output() -> None:
+    module = _load_nodes_module()
+    loader = module.T8DotsTTSEditModelLoader.define_schema()
+    edit = module.T8DotsTTSEdit.define_schema()
+
+    assert loader.outputs[0].io_type == "T8_DOTS_TTS_EDIT_MODEL"
+    assert edit.inputs[0].io_type == "T8_DOTS_TTS_EDIT_MODEL"
+    assert edit.inputs[1].io_type == "AUDIO"
+    assert edit.outputs[0].io_type == "AUDIO"
+    assert edit.outputs[1].id == "target_text"
+    assert (
+        module.T8DotsTTSEdit.validate_inputs("<del>旧</del>新", "auto", 1.5, 10, 1.2)
+        is True
+    )
+    assert isinstance(
+        module.T8DotsTTSEdit.validate_inputs("", "auto", 1.5, 10, 1.2), str
+    )
 
 
 def test_asr_and_timeline_are_executable_text_output_nodes() -> None:
@@ -73,9 +101,7 @@ def test_asr_and_timeline_are_executable_text_output_nodes() -> None:
         "STRING",
     ]
     assert module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, False) is True
-    assert isinstance(
-        module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, True), str
-    )
+    assert isinstance(module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, True), str)
 
 
 def test_long_text_uses_standard_audio_output_and_validates_controls() -> None:
@@ -132,9 +158,7 @@ def test_asr_and_timeline_nodes_expose_v3_contracts() -> None:
         "asr_info",
     ]
     assert module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, False) is True
-    assert isinstance(
-        module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, True), str
-    )
+    assert isinstance(module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, True), str)
     normalized = module.T8DotsTTSTimeline.execute(
         "1\n00:00:00,000 --> 00:00:01,000\n[旁白] 你好。\n",
         "srt",
@@ -186,3 +210,6 @@ def test_model_selector_keeps_both_types_without_local_weights() -> None:
     assert len(options) == 2
     assert options[0].endswith("[soar]")
     assert options[1].endswith("[mf-2steps]")
+    edit_options = module.model_options(runtime="edit")
+    assert len(edit_options) == 1
+    assert edit_options[0].endswith("[edit]")

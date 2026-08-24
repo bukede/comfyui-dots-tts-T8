@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 - 2026-08-24
+
+- Added dedicated dots.tts.edit model loader and instruction-controlled speech editing node.
+- Added authenticated desktop ASR sidecar transport with legacy in-process fallback.
+- Added VRAM recommendations and privacy-bounded diagnostic ZIP export.
+- Pinned all Edit model files and restricted ASR workflow inputs to verified artifacts.
+- Required real pinned ComfyUI V3 schema coverage in CI.
+
 ## 0.5.0 - 2026-08-24
 
 - Added pinned Qwen3-ASR transcription with Qwen ForcedAligner timestamps.

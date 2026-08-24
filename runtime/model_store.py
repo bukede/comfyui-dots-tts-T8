@@ -70,10 +70,12 @@ def candidate_directories() -> dict[str, Path]:
     return candidates
 
 
-def model_options() -> list[str]:
+def model_options(*, runtime: str = "tts") -> list[str]:
     catalog = ModelCatalog.load()
     return [
-        f"{artifact.display_name} [{artifact.key}]" for artifact in catalog.values()
+        f"{artifact.display_name} [{artifact.key}]"
+        for artifact in catalog.values()
+        if artifact.runtime == runtime
     ]
 
 
@@ -97,7 +99,7 @@ def resolve_model(option: str, custom_model_path: str = "") -> tuple[str, Path]:
     if path is None:
         raise FileNotFoundError(
             "未找到 dots.tts 模型。标准位置：ComfyUI/models/TTS/dots.tts/"
-            "dots.tts-soar 或 dots.tts-mf-2steps。"
+            "dots.tts-soar、dots.tts-mf-2steps 或 dots.tts.edit。"
         )
     return key, path
 

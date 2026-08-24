@@ -24,6 +24,8 @@
       "similarity_threshold": 0.72,
       "asr_model": "Qwen/Qwen3-ASR-0.6B",
       "aligner_model": "Qwen/Qwen3-ForcedAligner-0.6B",
+      "transport": "auto",
+      "release_after_run": true,
       "device": "cuda:0",
       "speaker_model": ["2", 0]
     }

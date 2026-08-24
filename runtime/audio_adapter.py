@@ -17,7 +17,7 @@ def normalize_output_audio(audio, sample_rate: int) -> dict:
 
 
 @contextmanager
-def prompt_audio_file(audio: dict):
+def audio_file(audio: dict, *, subtype: str = "PCM_16", prefix: str = "dots-tts-t8-"):
     waveform = audio.get("waveform")
     sample_rate = int(audio.get("sample_rate", 0))
     if waveform is None or sample_rate <= 0:
@@ -32,7 +32,15 @@ def prompt_audio_file(audio: dict):
 
     import soundfile as sf
 
-    with tempfile.TemporaryDirectory(prefix="dots-tts-t8-") as temp_dir:
-        path = Path(temp_dir) / "prompt.wav"
-        sf.write(path, data.numpy(), sample_rate, subtype="PCM_16")
+    with tempfile.TemporaryDirectory(prefix=prefix) as temp_dir:
+        path = Path(temp_dir) / "audio.wav"
+        sf.write(path, data.numpy(), sample_rate, subtype=subtype)
         yield path
+
+
+def prompt_audio_file(audio: dict):
+    return audio_file(audio, subtype="PCM_16", prefix="dots-tts-t8-prompt-")
+
+
+def edit_source_audio_file(audio: dict):
+    return audio_file(audio, subtype="FLOAT", prefix="dots-tts-t8-edit-")
