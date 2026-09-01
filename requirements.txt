@@ -1,5 +1,6 @@
 # Lightweight helpers only. ComfyUI owns torch/torchaudio/torchvision,
 # transformers, pydantic, NumPy and the CUDA stack.
+ffmpeg-python>=0.2,<0.3
 huggingface-hub>=0.26
 hf-xet>=1.6
 einops>=0.8

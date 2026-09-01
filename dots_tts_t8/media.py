@@ -6,7 +6,6 @@ import json
 import math
 import re
 import shutil
-import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
@@ -125,8 +124,6 @@ def fit_audio_to_duration(
 def find_ffmpeg(explicit: str | Path | None = None) -> Path:
     executable = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
     candidates: list[Path] = []
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
     module_path = Path(__file__).resolve()
     candidates.extend(
         [
@@ -146,43 +143,80 @@ def find_ffmpeg(explicit: str | Path | None = None) -> Path:
     discovered = shutil.which(executable) or shutil.which("ffmpeg")
     if discovered:
         candidates.append(Path(discovered))
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved.is_file():
-            return resolved
+    trusted = [candidate.resolve() for candidate in candidates if candidate.is_file()]
+    if explicit:
+        resolved_explicit = Path(explicit).expanduser().resolve()
+        if resolved_explicit.name.lower() not in {"ffmpeg", "ffmpeg.exe"}:
+            raise ValueError("The configured FFmpeg executable must be named ffmpeg.")
+        if resolved_explicit not in trusted:
+            raise ValueError(
+                "Explicit FFmpeg paths must resolve to the bundled/PATH executable."
+            )
+        if not resolved_explicit.is_file():
+            raise FileNotFoundError(f"FFmpeg was not found: {resolved_explicit}")
+        return resolved_explicit
+    for resolved in trusted:
+        return resolved
     raise FileNotFoundError(
         "FFmpeg was not found. Install FFmpeg, connect an explicit path, or use the "
         "Windows integration package that bundles it."
     )
 
 
+@dataclass(frozen=True)
+class _FFmpegResult:
+    stdout: str
+    stderr: str
+    returncode: int
+
+
+def _ffmpeg_binding():
+    try:
+        import ffmpeg
+    except ImportError as exc:
+        raise RuntimeError(
+            "Media export requires ffmpeg-python. Reinstall this package's "
+            "declared dependencies."
+        ) from exc
+    return ffmpeg
+
+
 def _run_ffmpeg(
-    ffmpeg: Path,
-    arguments: Sequence[str],
+    ffmpeg_path: Path,
+    stream_spec: Any,
     *,
     timeout_seconds: int = 1800,
-) -> subprocess.CompletedProcess[str]:
-    command = [str(ffmpeg), "-hide_banner", "-nostdin", *map(str, arguments)]
+    overwrite: bool = False,
+) -> _FFmpegResult:
+    """Execute a pre-built FFmpeg graph without invoking a command shell."""
+
+    binding = _ffmpeg_binding()
+    process = binding.run_async(
+        stream_spec,
+        cmd=[str(ffmpeg_path), "-hide_banner", "-nostdin"],
+        pipe_stdout=True,
+        pipe_stderr=True,
+        overwrite_output=overwrite,
+    )
     try:
-        result = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_seconds,
-        )
-    except subprocess.TimeoutExpired as exc:
+        stdout_bytes, stderr_bytes = process.communicate(timeout=timeout_seconds)
+    except Exception as exc:
+        if exc.__class__.__name__ != "TimeoutExpired":
+            raise
+        process.kill()
+        process.communicate()
         raise TimeoutError(
             f"FFmpeg timed out after {timeout_seconds} seconds."
         ) from exc
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()[-4000:]
+    stdout = (stdout_bytes or b"").decode("utf-8", errors="replace")
+    stderr = (stderr_bytes or b"").decode("utf-8", errors="replace")
+    returncode = int(process.returncode or 0)
+    if returncode != 0:
+        detail = (stderr or stdout).strip()[-4000:]
         raise RuntimeError(
-            f"FFmpeg failed with exit code {result.returncode}: {detail}"
+            f"FFmpeg failed with exit code {returncode}: {detail}"
         )
-    return result
+    return _FFmpegResult(stdout=stdout, stderr=stderr, returncode=returncode)
 
 
 def _loudnorm_filter(
@@ -199,19 +233,25 @@ def measure_loudness(
     loudness_range: float = 11.0,
     ffmpeg_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    ffmpeg = find_ffmpeg(ffmpeg_path)
+    ffmpeg_path = find_ffmpeg(ffmpeg_path)
+    binding = _ffmpeg_binding()
+    filtered_audio = binding.input(str(Path(source).resolve())).audio.filter(
+        "loudnorm",
+        **{
+            "I": float(target_lufs),
+            "TP": float(target_peak),
+            "LRA": float(loudness_range),
+            "print_format": "json",
+        },
+    )
+    stream_spec = binding.output(
+        filtered_audio,
+        "NUL" if sys.platform == "win32" else "/dev/null",
+        format="null",
+    )
     result = _run_ffmpeg(
-        ffmpeg,
-        [
-            "-i",
-            str(Path(source).resolve()),
-            "-af",
-            _loudnorm_filter(target_lufs, target_peak, loudness_range)
-            + ":print_format=json",
-            "-f",
-            "null",
-            "NUL" if sys.platform == "win32" else "/dev/null",
-        ],
+        ffmpeg_path,
+        stream_spec,
     )
     matches = re.findall(r"\{\s*\"input_i\".*?\}", result.stderr, flags=re.DOTALL)
     if not matches:
@@ -237,7 +277,8 @@ def normalize_loudness(
 ) -> dict[str, Any]:
     if not -36.0 <= float(target_lufs) <= -5.0:
         raise ValueError("target_lufs must be between -36 and -5.")
-    ffmpeg = find_ffmpeg(ffmpeg_path)
+    ffmpeg_path = find_ffmpeg(ffmpeg_path)
+    binding = _ffmpeg_binding()
     source_path = Path(source).resolve()
     destination_path = Path(destination).resolve()
     destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -249,7 +290,7 @@ def normalize_loudness(
         target_lufs=target_lufs,
         target_peak=target_peak,
         loudness_range=loudness_range,
-        ffmpeg_path=ffmpeg,
+        ffmpeg_path=ffmpeg_path,
     )
     required = {
         "input_i": "measured_I",
@@ -261,24 +302,28 @@ def normalize_loudness(
     measured_values = ":".join(
         f"{argument}={measured[key]}" for key, argument in required.items()
     )
-    audio_filter = (
-        _loudnorm_filter(target_lufs, target_peak, loudness_range)
-        + f":{measured_values}:linear=true:print_format=summary"
+    filter_options = {
+        "I": float(target_lufs),
+        "TP": float(target_peak),
+        "LRA": float(loudness_range),
+        "linear": "true",
+        "print_format": "summary",
+    }
+    filter_options.update(
+        dict(item.split("=", 1) for item in measured_values.split(":"))
+    )
+    filtered_audio = binding.input(str(source_path)).audio.filter(
+        "loudnorm", **filter_options
+    )
+    stream_spec = binding.output(
+        filtered_audio,
+        str(destination_path),
+        **{"c:a": "pcm_s24le", "ar": source_sample_rate},
     )
     _run_ffmpeg(
-        ffmpeg,
-        [
-            "-y",
-            "-i",
-            str(source_path),
-            "-af",
-            audio_filter,
-            "-c:a",
-            "pcm_s24le",
-            "-ar",
-            str(source_sample_rate),
-            str(destination_path),
-        ],
+        ffmpeg_path,
+        stream_spec,
+        overwrite=True,
     )
     return measured
 
@@ -316,18 +361,25 @@ def export_project_media(
         primary = normalized
         exports.append(normalized)
     if ffmpeg is not None:
+        binding = _ffmpeg_binding()
         for audio_format in formats:
             if audio_format == "wav":
                 continue
             destination = source.with_suffix(f".{audio_format}")
-            codec = (
-                ["-c:a", "libmp3lame", "-q:a", "2"]
+            output_options = (
+                {"c:a": "libmp3lame", "q:a": 2}
                 if audio_format == "mp3"
-                else ["-c:a", "flac", "-compression_level", "8"]
+                else {"c:a": "flac", "compression_level": 8}
+            )
+            stream_spec = binding.output(
+                binding.input(str(primary)).audio,
+                str(destination),
+                **output_options,
             )
             _run_ffmpeg(
                 ffmpeg,
-                ["-y", "-i", str(primary), *codec, str(destination)],
+                stream_spec,
+                overwrite=True,
             )
             exports.append(destination)
     dubbed_video: Path | None = None
@@ -337,35 +389,27 @@ def export_project_media(
             raise FileNotFoundError(f"Video input does not exist: {source_video}")
         suffix = source_video.suffix.lower() or ".mp4"
         dubbed_video = source.parent / f"{source_video.stem}-dubbed{suffix}"
+        binding = _ffmpeg_binding()
+        video_input = binding.input(str(source_video))
+        audio_input = binding.input(str(primary))
+        stream_spec = binding.output(
+            video_input.video,
+            audio_input.audio.filter("apad"),
+            video_input["s?"],
+            str(dubbed_video),
+            **{
+                "map_metadata": "0",
+                "c:v": "copy",
+                "c:s": "copy",
+                "c:a": "aac",
+                "b:a": "192k",
+                "shortest": None,
+            },
+        )
         _run_ffmpeg(
             ffmpeg or find_ffmpeg(ffmpeg_path),
-            [
-                "-y",
-                "-i",
-                str(source_video),
-                "-i",
-                str(primary),
-                "-map",
-                "0:v:0",
-                "-map",
-                "1:a:0",
-                "-map",
-                "0:s?",
-                "-map_metadata",
-                "0",
-                "-c:v",
-                "copy",
-                "-c:s",
-                "copy",
-                "-af",
-                "apad",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                "-shortest",
-                str(dubbed_video),
-            ],
+            stream_spec,
+            overwrite=True,
         )
         exports.append(dubbed_video)
     unique_exports = tuple(dict.fromkeys(str(path) for path in exports))

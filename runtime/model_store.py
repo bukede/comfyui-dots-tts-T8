@@ -92,7 +92,22 @@ def resolve_model(option: str, custom_model_path: str = "") -> tuple[str, Path]:
         if key == MISSING_MODEL_OPTION:
             raise ValueError("使用自定义路径时仍需选择模型类型。")
         catalog.get(key)
-        return key, Path(custom_model_path).expanduser().resolve()
+        resolved = Path(custom_model_path).expanduser().resolve()
+        try:
+            import folder_paths  # noqa: F401
+
+            running_in_comfy = True
+        except ImportError:
+            running_in_comfy = False
+        if running_in_comfy:
+            if not any(
+                _is_relative_to(resolved, root)
+                for root in model_roots()
+            ):
+                raise ValueError(
+                    "自定义模型必须位于 ComfyUI models/TTS 根目录。"
+                )
+        return key, resolved
 
     key = _key_from_option(option)
     path = candidate_directories().get(key)
@@ -115,9 +130,21 @@ def validate_model(
 def model_fingerprint(model_key: str, model_dir: Path) -> str:
     digest = hashlib.sha256()
     digest.update(model_key.encode())
-    for name in ("config.json", "model.safetensors", "vocoder.safetensors"):
+    artifact = ModelCatalog.load().get(model_key)
+    for item in sorted(artifact.files, key=lambda value: value.relative_path):
+        name = item.relative_path
         path = model_dir / name
         if path.exists():
             stat = path.stat()
             digest.update(f"{name}:{stat.st_size}:{stat.st_mtime_ns}".encode())
+        else:
+            digest.update(f"{name}:missing".encode())
     return digest.hexdigest()
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False

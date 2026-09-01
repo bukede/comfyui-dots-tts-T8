@@ -11,6 +11,7 @@ class ModelHandle:
     precision: str
     optimize: bool
     release_after_run: bool
+    content_fingerprint: str = ""
 
 
 @dataclass(frozen=True)

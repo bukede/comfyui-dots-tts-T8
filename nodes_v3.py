@@ -92,15 +92,47 @@ LANGUAGES = [
 ]
 
 
-def _project_output_root(value: str) -> Path:
-    if value.strip():
-        return Path(value).expanduser().resolve()
+def _comfy_directory(kind: str) -> Path | None:
     try:
         import folder_paths
 
-        return Path(folder_paths.get_output_directory()) / "dots_tts_t8_projects"
+        if kind == "input":
+            return Path(folder_paths.get_input_directory()).resolve()
+        if kind == "output":
+            return Path(folder_paths.get_output_directory()).resolve()
     except (ImportError, AttributeError):
-        return Path.cwd() / "output" / "dots_tts_t8_projects"
+        return None
+    raise ValueError(f"Unsupported ComfyUI directory kind: {kind}")
+
+
+def _require_within(path: Path, root: Path | None, label: str) -> Path:
+    resolved = path.expanduser().resolve()
+    if root is not None:
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(
+                f"{label} 必须位于 ComfyUI {root} 内。"
+            ) from exc
+    return resolved
+
+
+def _input_path(value: str | Path, *, base: Path | None = None) -> Path:
+    root = _comfy_directory("input")
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = (base or root or Path.cwd()) / candidate
+    return _require_within(candidate, root, "输入路径")
+
+
+def _project_output_root(value: str) -> Path:
+    root = _comfy_directory("output")
+    if value.strip():
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = (root or Path.cwd() / "output") / candidate
+        return _require_within(candidate, root, "输出目录")
+    return (root or Path.cwd() / "output") / "dots_tts_t8_projects"
 
 
 class T8DotsTTSModelLoader(io.ComfyNode):
@@ -205,6 +237,7 @@ class T8DotsTTSModelLoader(io.ComfyNode):
             precision=precision,
             optimize=bool(optimize),
             release_after_run=bool(release_after_run),
+            content_fingerprint=model_fingerprint(key, model_dir),
         )
         info = {
             "model_key": key,
@@ -328,6 +361,7 @@ class T8DotsTTSEditModelLoader(io.ComfyNode):
             precision=precision,
             optimize=bool(optimize),
             release_after_run=bool(release_after_run),
+            content_fingerprint=model_fingerprint(key, model_dir),
         )
         info = {
             "model_key": key,
@@ -531,11 +565,14 @@ class T8DotsTTSSpeakerMap(io.ComfyNode):
         value: dict = {}
         library_base = Path.cwd()
         if voice_library.strip():
-            library = parse_voice_library(voice_library)
+            library_value: str | Path = voice_library
+            stripped_library = voice_library.strip()
+            if not stripped_library.startswith("{"):
+                library_value = _input_path(stripped_library)
+            library = parse_voice_library(library_value)
             value.update(library.voices)
-            candidate = Path(voice_library.strip()).expanduser()
-            if candidate.is_file():
-                library_base = candidate.resolve().parent
+            if isinstance(library_value, Path):
+                library_base = library_value.resolve().parent
         value.update(json.loads(mapping_json or "{}"))
         slots = {"A": voice_a, "B": voice_b, "C": voice_c, "D": voice_d}
         voices: dict[str, VoicePrompt] = {}
@@ -552,10 +589,7 @@ class T8DotsTTSSpeakerMap(io.ComfyNode):
                 else None
             )
             if audio_value:
-                audio_path = Path(str(audio_value)).expanduser()
-                if not audio_path.is_absolute():
-                    audio_path = library_base / audio_path
-                audio_path = audio_path.resolve()
+                audio_path = _input_path(str(audio_value), base=library_base)
                 if not audio_path.is_file():
                     raise FileNotFoundError(
                         f"角色 {speaker!r} 的参考音频不存在：{audio_path}"
@@ -1158,6 +1192,9 @@ class T8DotsTTSProject(io.ComfyNode):
         speaker_map: SpeakerVoiceMap | None = None,
         sampling: SamplingConfig | None = None,
     ) -> io.NodeOutput:
+        resolved_video_path = (
+            str(_input_path(video_path.strip())) if video_path.strip() else None
+        )
         audio, info = run_project_inference(
             handle=model,
             source_name=project_name.strip() or "project.txt",
@@ -1176,7 +1213,7 @@ class T8DotsTTSProject(io.ComfyNode):
             subtitle_fit_mode=subtitle_fit_mode,
             audio_formats=audio_formats,
             target_lufs=float(target_lufs) if float(target_lufs) <= -5.0 else None,
-            video_path=video_path.strip() or None,
+            video_path=resolved_video_path,
             ffmpeg_path=ffmpeg_path.strip() or None,
         )
         return io.NodeOutput(audio, json.dumps(info, ensure_ascii=False, indent=2))
@@ -1343,7 +1380,14 @@ class T8DotsTTSBatchQueue(io.ComfyNode):
         speaker_map: SpeakerVoiceMap | None = None,
         sampling: SamplingConfig | None = None,
     ) -> io.NodeOutput:
-        paths = [line.strip() for line in input_paths.splitlines() if line.strip()]
+        paths = [
+            str(_input_path(line.strip()))
+            for line in input_paths.splitlines()
+            if line.strip()
+        ]
+        resolved_video_path = (
+            str(_input_path(video_path.strip())) if video_path.strip() else None
+        )
         audio, info = run_batch_inference(
             handle=model,
             input_paths=paths,
@@ -1361,7 +1405,7 @@ class T8DotsTTSBatchQueue(io.ComfyNode):
             subtitle_fit_mode=subtitle_fit_mode,
             audio_formats=audio_formats,
             target_lufs=float(target_lufs) if float(target_lufs) <= -5.0 else None,
-            video_path=video_path.strip() or None,
+            video_path=resolved_video_path,
             ffmpeg_path=ffmpeg_path.strip() or None,
         )
         return io.NodeOutput(
@@ -1418,21 +1462,21 @@ class T8DotsTTSTranscribe(io.ComfyNode):
                 io.Combo.Input(
                     "asr_model",
                     display_name="固定 ASR 模型",
-                    options=["Qwen/Qwen3-ASR-0.6B"],
-                    default="Qwen/Qwen3-ASR-0.6B",
+                    options=["Qwen/Qwen3-ASR-0.6B-hf"],
+                    default="Qwen/Qwen3-ASR-0.6B-hf",
                     advanced=True,
                 ),
                 io.Combo.Input(
                     "aligner_model",
                     display_name="固定 ForcedAligner 模型",
-                    options=["Qwen/Qwen3-ForcedAligner-0.6B"],
-                    default="Qwen/Qwen3-ForcedAligner-0.6B",
+                    options=["Qwen/Qwen3-ForcedAligner-0.6B-hf"],
+                    default="Qwen/Qwen3-ForcedAligner-0.6B-hf",
                     advanced=True,
                 ),
                 io.Combo.Input(
                     "transport",
                     display_name="ASR 隔离方式",
-                    options=["auto", "sidecar", "in_process_legacy"],
+                    options=["auto", "sidecar", "in_process"],
                     default="auto",
                     tooltip="auto 优先连接桌面隔离服务；不可用时兼容进程内 ASR。",
                     advanced=True,
@@ -1472,8 +1516,8 @@ class T8DotsTTSTranscribe(io.ComfyNode):
         diarize: bool,
         speaker_model: ModelHandle | None = None,
         transport: str = "auto",
-        asr_model: str = "Qwen/Qwen3-ASR-0.6B",
-        aligner_model: str = "Qwen/Qwen3-ForcedAligner-0.6B",
+        asr_model: str = "Qwen/Qwen3-ASR-0.6B-hf",
+        aligner_model: str = "Qwen/Qwen3-ForcedAligner-0.6B-hf",
         **kwargs,
     ) -> bool | str:
         if not 0 <= int(speaker_count) <= 32:
@@ -1482,11 +1526,11 @@ class T8DotsTTSTranscribe(io.ComfyNode):
             return "说话人相似度阈值必须在 0.4–0.95。"
         if diarize and speaker_model is None:
             return "启用说话人分离时必须连接 dots.tts 模型。"
-        if transport not in {"auto", "sidecar", "in_process_legacy"}:
+        if transport not in {"auto", "sidecar", "in_process", "in_process_legacy"}:
             return "ASR 隔离方式无效。"
-        if asr_model != "Qwen/Qwen3-ASR-0.6B":
+        if asr_model != "Qwen/Qwen3-ASR-0.6B-hf":
             return "ASR 模型必须使用固定清单版本。"
-        if aligner_model != "Qwen/Qwen3-ForcedAligner-0.6B":
+        if aligner_model != "Qwen/Qwen3-ForcedAligner-0.6B-hf":
             return "ForcedAligner 必须使用固定清单版本。"
         return True
 
@@ -1628,7 +1672,7 @@ class T8DotsTTSDiagnostics(io.ComfyNode):
     @classmethod
     def execute(cls, output_dir: str = "") -> io.NodeOutput:
         root = (
-            Path(output_dir).expanduser().resolve()
+            _project_output_root(output_dir)
             if output_dir.strip()
             else _project_output_root("").parent / "dots_tts_t8_diagnostics"
         )
@@ -1655,6 +1699,7 @@ class T8DotsTTSRelease(io.ComfyNode):
                 ModelType.Input("model", display_name="dots.tts 模型", optional=True)
             ],
             outputs=[io.String.Output("result", display_name="释放结果 JSON")],
+            is_output_node=True,
         )
 
     @classmethod

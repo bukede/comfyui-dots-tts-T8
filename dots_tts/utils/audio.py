@@ -8,7 +8,6 @@ import torch.nn.functional as F
 import torchaudio.compliance.kaldi as Kaldi
 import torchaudio.functional as AF
 
-
 EDIT_EDGE_SILENCE_MS = 250.0
 EDIT_EDGE_SILENCE_TOP_DB = 30.0
 

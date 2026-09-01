@@ -3,29 +3,46 @@ name: Quality checks
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  registry-metadata:
+  quality:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+        numpy-version: ["1.26.4", "2.2.6"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - name: Check out node
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.12"
+          persist-credentials: false
       - name: Check out pinned ComfyUI V3 API
-        run: git clone --filter=blob:none --no-checkout https://github.com/Comfy-Org/ComfyUI.git ../ComfyUI && git -C ../ComfyUI checkout 62b3c94bd45154f6486c7abf1b9efcacee96ea69
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Comfy-Org/ComfyUI
+          ref: 3216c62e9962c3babd28a4dfea6e5aef50b8fe16
+          path: _comfyui
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
       - name: Install test-only dependencies
         run: |
-          python -m pip install "pytest>=8,<9" "ruff>=0.15,<0.16" -r requirements.txt
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install av pydantic numpy pillow
+          python -m pip install --upgrade pip
+          python -m pip install "pytest>=9.0.3,<10" "ruff>=0.15,<0.16" -r requirements.txt
+          python -m pip install "torch==2.8.0" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install "transformers==5.16.1" "huggingface-hub==1.29.0" "tokenizers==0.23.1" "safetensors==0.8.0"
+          python -m pip install "numpy==${{ matrix.numpy-version }}" "av==17.0.0" "comfy-aimdo==0.4.15" "pydantic==2.12.5" "pillow==11.3.0"
+          python -m pip check
       - name: Run all tests and require real ComfyUI schema coverage
         env:
-          PYTHONPATH: ${{ github.workspace }}/../ComfyUI
+          PYTHONPATH: ${{ github.workspace }}/_comfyui
           T8_REQUIRE_COMFY_API: "1"
         run: python -m pytest -q tests
-      - run: python -m ruff check __init__.py nodes_v3.py runtime dots_tts_t8 scripts tests
+      - run: python -m ruff check __init__.py nodes_v3.py runtime dots_tts dots_tts_t8 scripts tests
       - run: python -m compileall -q __init__.py nodes_v3.py runtime dots_tts dots_tts_t8 scripts

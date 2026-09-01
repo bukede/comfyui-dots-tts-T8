@@ -4,6 +4,13 @@
   "commit": "09235d55005c61867d3b94aeb6e13eede919a0a3",
   "captured_at": "2026-08-23",
   "integration_branch": "t8-integration-v0.1",
+  "vendored_integrity": {
+    "algorithm": "sha256(path + NUL + sha256(normalized_lf_bytes))",
+    "dots_tts_python_files": 66,
+    "dots_tts_python_sha256": "c96ba1b61f5a899474c2b1e56870827c1c14bff73177307e8d77771c1c6feef6",
+    "dots_tts_t8_python_files": 16,
+    "dots_tts_t8_python_sha256": "7898625523e07ec102c9f63b752c46a832cf8d7bca242963143c8820b3ae1630"
+  },
   "policy": {
     "pin_upstream_code": true,
     "pin_model_revisions": true,

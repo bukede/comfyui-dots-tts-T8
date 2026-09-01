@@ -23,7 +23,6 @@ RUNTIME_PACKAGES = (
     "loguru",
     "langcodes",
     "lingua-language-detector",
-    "qwen-asr",
 )
 
 REQUIRED_RUNTIME_PACKAGES = (
@@ -181,9 +180,9 @@ def inspect_environment(*, import_torch: bool = True) -> EnvironmentReport:
             transformers_tuple = tuple(int(part) for part in major_minor)
         except ValueError:
             transformers_tuple = ()
-        if transformers_tuple and transformers_tuple < (4, 57):
+        if transformers_tuple and transformers_tuple < (5, 5):
             warnings.append(
-                "dots.tts v0.3.1 requires transformers 4.57 or newer; "
+                "This T8 distribution requires transformers 5.5 or newer; "
                 f"detected {packages['transformers']}."
             )
 

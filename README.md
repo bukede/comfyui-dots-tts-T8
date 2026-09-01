@@ -57,31 +57,32 @@ T8 => T 八
 ZIP。“只重跑失败项”会读取原 manifest，并要求配置指纹完全一致。
 
 媒体导出支持 WAV、MP3、FLAC、两遍 EBU R128 LUFS 标准化和视频音轨回封。纯 WAV
-不需要 FFmpeg；其他功能要求系统 `PATH` 中存在 FFmpeg，或在工程/批量节点填写
-`ffmpeg_path`。节点不会下载或安装 FFmpeg。
+不需要 FFmpeg；其他功能要求整合包内置 FFmpeg，或系统 `PATH` 中存在 FFmpeg。
+工作流不能启动任意可执行文件，节点也不会下载或安装 FFmpeg。
 
 ## ASR 与字幕时间轴
 
 “ASR 转写与说话人分离”节点把 ComfyUI `AUDIO` 转为带时间戳的 SRT、标准时间轴
-JSON 和完整识别报告。默认使用固定 revision 的 `Qwen/Qwen3-ASR-0.6B` 与
-`Qwen/Qwen3-ForcedAligner-0.6B`，首次使用会下载约 3.7 GB 权重并逐文件校验尺寸和
+JSON 和完整识别报告。默认使用 Transformers 5 原生、固定 revision 的
+`Qwen/Qwen3-ASR-0.6B-hf` 与 `Qwen/Qwen3-ForcedAligner-0.6B-hf`，首次使用会下载
+约 3.4 GB 权重并逐文件校验尺寸和
 SHA-256。启用说话人分离时，需要连接任意已发现的 dots.tts 模型；节点只读取其中的
 CAM++ `speaker_encoder.safetensors`，不会为分离加载完整 TTS 推理模型。
 
 默认 `auto` 会优先连接 T8 Windows 整合包自动启动的本机 ASR sidecar。sidecar 使用
 随机令牌、只绑定 loopback，并在独立 Python 进程中加载 Qwen3-ASR；转写后默认释放
-显存。这样 ComfyUI 主环境无需安装 `qwen-asr` 或替换 Transformers。
+显存。这样 ComfyUI 主环境无需调整 Transformers。
 
 ASR 是可选能力。为避免 ComfyUI Manager 自动升级核心 `transformers`，它不在
 `requirements.txt` 中。请先备份 ComfyUI 环境，再使用启动 ComfyUI 的同一个 Python
-手动安装与本节点验证版本一致的组件：
+手动安装安全版本的原生组件：
 
 ```powershell
-python -m pip install "qwen-asr==0.0.6" "transformers==4.57.6"
+python -m pip install "transformers>=5.5,<6"
 ```
 
 若其他节点不兼容该 Transformers 版本，可保留桌面整合包中的 ASR，ComfyUI 侧只用
-TTS 节点。没有桌面 sidecar 时，可明确选择 `in_process_legacy` 并按上面的固定版本
+TTS 节点。没有桌面 sidecar 时，可明确选择 `in_process` 并按上面的安全版本
 手动安装。“字幕时间轴标准化”节点可校验 SRT、WebVTT 或本项目 JSON，重新输出统一
 SRT/JSON；两个节点都可作为队列终点并直接预览字幕文本。
 
@@ -111,11 +112,11 @@ python -m pip install -r comfyui-dots-tts-T8\requirements.txt
 `pydantic` 或 `numpy`，避免覆盖 ComfyUI 的核心环境。缺少这些包时请修复 ComfyUI
 自身环境。
 
-dots.tts v0.3.1 要求 `transformers>=4.57,<5`。若环境诊断报告版本过低，请先备份
+本节点验证范围为 `transformers>=5.5,<6`。若环境诊断报告版本过低，请先备份
 ComfyUI 环境并自行评估其他节点兼容性，再用同一个 Python 执行：
 
 ```powershell
-python -m pip install "transformers>=4.57,<5"
+python -m pip install "transformers>=5.5,<6"
 ```
 
 ## 模型位置

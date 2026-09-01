@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -107,6 +108,48 @@ def test_registry_package_does_not_read_process_environment() -> None:
         for forbidden in ("os.environ", "os.getenv"):
             if forbidden in source:
                 findings.append(f"{path.relative_to(ROOT)}: {forbidden}")
+    assert findings == []
+
+
+def test_registry_package_has_no_direct_process_or_dynamic_code_execution() -> None:
+    forbidden_names = {"eval", "exec"}
+    forbidden_attributes = {
+        "asyncio": {"create_subprocess_exec", "create_subprocess_shell"},
+        "os": {"popen", "spawnl", "spawnle", "spawnlp", "spawnlpe", "system"},
+        "subprocess": {
+            "Popen",
+            "call",
+            "check_call",
+            "check_output",
+            "run",
+        },
+    }
+    findings: list[str] = []
+    production_files = (
+        path
+        for path in ROOT.rglob("*.py")
+        if "tests" not in path.relative_to(ROOT).parts
+    )
+    for path in production_files:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            function = node.func
+            if isinstance(function, ast.Name) and function.id in forbidden_names:
+                findings.append(
+                    f"{path.relative_to(ROOT)}:{node.lineno}: {function.id}"
+                )
+            elif (
+                isinstance(function, ast.Attribute)
+                and isinstance(function.value, ast.Name)
+                and function.attr
+                in forbidden_attributes.get(function.value.id, set())
+            ):
+                findings.append(
+                    f"{path.relative_to(ROOT)}:{node.lineno}: "
+                    f"{function.value.id}.{function.attr}"
+                )
     assert findings == []
 
 

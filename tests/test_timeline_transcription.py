@@ -76,20 +76,48 @@ def test_qwen_adapter_converts_forced_alignment_without_loading_real_model(
 ) -> None:
     audio_path = tmp_path / "speech.wav"
     sf.write(audio_path, np.zeros(16_000, dtype=np.float32), 16_000)
-    fake_result = SimpleNamespace(
-        text="Hello world!",
-        language="English",
-        time_stamps=[
-            SimpleNamespace(text="Hello", start_time=0.0, end_time=0.4),
-            SimpleNamespace(text="world!", start_time=0.45, end_time=0.9),
-        ],
-    )
+    torch = pytest.importorskip("torch")
+
+    class FakeBatch(dict):
+        def to(self, *args):
+            return self
+
+    class FakeProcessor:
+        @staticmethod
+        def apply_transcription_request(**kwargs):
+            assert kwargs["audio"] == str(audio_path)
+            return FakeBatch(input_ids=torch.tensor([[1, 2]]))
+
+        @staticmethod
+        def decode(*args, **kwargs):
+            assert kwargs["return_format"] == "parsed"
+            return [{"transcription": "Hello world!", "language": "English"}]
+
+    class FakeAlignerProcessor:
+        @staticmethod
+        def prepare_forced_aligner_inputs(**kwargs):
+            return FakeBatch(input_ids=torch.tensor([[1, 2]])), [["Hello", "world!"]]
+
+        @staticmethod
+        def decode_forced_alignment(**kwargs):
+            return [[
+                {"text": "Hello", "start_time": 0.0, "end_time": 0.4},
+                {"text": "world!", "start_time": 0.45, "end_time": 0.9},
+            ]]
 
     class FakeModel:
+        device = torch.device("cpu")
+        dtype = torch.float32
+
         @staticmethod
-        def transcribe(**kwargs):
-            assert kwargs["return_time_stamps"] is True
-            return [fake_result]
+        def generate(**kwargs):
+            return torch.tensor([[1, 2, 3]])
+
+    class FakeAlignerModel(FakeModel):
+        config = SimpleNamespace(timestamp_token_id=9)
+
+        def __call__(self, **kwargs):
+            return SimpleNamespace(logits=torch.zeros(1, 1, 1))
 
     engine = QwenAsrEngine(
         "local-asr",
@@ -98,7 +126,12 @@ def test_qwen_adapter_converts_forced_alignment_without_loading_real_model(
         aligner_revision=None,
         device="cpu",
     )
-    engine._model = FakeModel()  # noqa: SLF001
+    engine._model = {  # noqa: SLF001
+        "processor": FakeProcessor(),
+        "model": FakeModel(),
+        "aligner_processor": FakeAlignerProcessor(),
+        "aligner_model": FakeAlignerModel(),
+    }
     result = engine.transcribe(audio_path)
     assert result.language == "English"
     assert result.segments[0].text == "Hello world!"

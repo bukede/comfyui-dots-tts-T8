@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import threading
 import time
+from functools import wraps
 from pathlib import Path
 from typing import Any, Iterator, TypedDict
 
@@ -45,6 +48,24 @@ RUNTIME_TEMPLATE_NAMES = tuple(sorted(RUNTIME_TEMPLATE_BY_NAME))
 DEFAULT_MAX_SEQUENCE_LENGTH = DotsTtsModel.DEFAULT_MAX_SEQUENCE_LENGTH
 
 
+def _serialized_call(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._inference_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
+def _serialized_stream(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._inference_lock:
+            yield from method(self, *args, **kwargs)
+
+    return wrapped
+
+
 class RuntimeInputs(TypedDict, total=False):
     fid: str
     language: str
@@ -62,6 +83,13 @@ class DotsTtsRuntime:
         import warnings
 
         if torch.cuda.is_available():
+            if precision.lower() in {"bfloat16", "bf16", "torch.bfloat16"} and not (
+                torch.cuda.is_bf16_supported()
+            ):
+                raise RuntimeError(
+                    "The selected CUDA device does not support bfloat16; "
+                    "use precision='float32'."
+                )
             return
         msg = (
             f"CUDA is not available; torch will run on CPU. "
@@ -89,6 +117,7 @@ class DotsTtsRuntime:
         warmup_on_optimize: bool = True,
     ):
         self._check_torch_env(precision)
+        self._inference_lock = threading.RLock()
         self.model = model
         self.pretrained_path = pretrained_path
         self.precision = precision
@@ -96,7 +125,6 @@ class DotsTtsRuntime:
             self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")
-            torch.set_num_threads(1)
         if self.device.type == "cuda" and self.precision.lower() in {
             "fp32",
             "torch.float32",
@@ -446,8 +474,16 @@ class DotsTtsRuntime:
     ) -> torch.Tensor:
         logger.debug(logc("io", "Loading prompt audio: path={}"), prompt_audio_path)
         prompt_audio, sample_rate = librosa.load(prompt_audio_path, sr=None, mono=True)
+        if int(sample_rate) <= 0 or prompt_audio.size == 0:
+            raise ValueError("Prompt audio must be non-empty with a positive sample rate.")
         prompt_audio = librosa.effects.trim(prompt_audio, top_db=30)[0]
         prompt_audio = torch.from_numpy(prompt_audio).unsqueeze(0)
+        if prompt_audio.numel() == 0 or not torch.isfinite(prompt_audio).all():
+            raise ValueError("Prompt audio must contain finite, audible samples.")
+        if float(prompt_audio.abs().max()) <= 1e-6:
+            raise ValueError("Prompt audio is silent.")
+        if prompt_audio.shape[-1] > int(sample_rate) * 60:
+            raise ValueError("Prompt audio cannot exceed 60 seconds.")
         prompt_audio = high_quality_resample(
             prompt_audio,
             orig_sr=sample_rate,
@@ -455,6 +491,8 @@ class DotsTtsRuntime:
         )
         if prompt_audio.ndim == 1:
             prompt_audio = prompt_audio.unsqueeze(0)
+        if prompt_audio.numel() == 0 or not torch.isfinite(prompt_audio).all():
+            raise ValueError("Resampled prompt audio is empty or non-finite.")
         logger.debug(
             logc(
                 "io",
@@ -518,6 +556,8 @@ class DotsTtsRuntime:
         stripped = text.strip()
         if normalize:
             stripped = normalize_text(stripped)
+        if not stripped:
+            raise ValueError("text must contain non-whitespace characters.")
         resolved_language = self._resolve_language(language, text=stripped)
         return stripped, resolved_language
 
@@ -673,17 +713,42 @@ class DotsTtsRuntime:
 
         sampling = self.model.config.sampling
         if sampling is not None:
-            return sampling.resolve(
+            resolved = sampling.resolve(
                 ode_method=ode_method,
                 num_steps=num_steps,
                 guidance_scale=guidance_scale,
             )
-        return (
-            "euler" if ode_method is None else str(ode_method),
-            10 if num_steps is None else int(num_steps),
-            1.2 if guidance_scale is None else float(guidance_scale),
-        )
+        else:
+            resolved = (
+                "euler" if ode_method is None else str(ode_method),
+                10 if num_steps is None else int(num_steps),
+                1.2 if guidance_scale is None else float(guidance_scale),
+            )
+        resolved_method, resolved_steps, resolved_guidance = resolved
+        if not resolved_method.strip():
+            raise ValueError("ode_method cannot be empty.")
+        if self.optimize and resolved_method != "euler":
+            raise ValueError(
+                "optimize=True currently supports only ode_method='euler'."
+            )
+        if resolved_steps <= 0:
+            raise ValueError("num_steps must be positive.")
+        if resolved_steps > 1000:
+            raise ValueError("num_steps cannot exceed 1000.")
+        if not math.isfinite(resolved_guidance):
+            raise ValueError("guidance_scale must be finite.")
+        if abs(resolved_guidance) > 100:
+            raise ValueError("guidance_scale magnitude cannot exceed 100.")
+        return resolved_method, resolved_steps, resolved_guidance
 
+    @staticmethod
+    def _validate_speaker_scale(value: float) -> float:
+        resolved = float(value)
+        if not math.isfinite(resolved) or not 0.0 <= resolved <= 10.0:
+            raise ValueError("speaker_scale must be finite and between 0 and 10.")
+        return resolved
+
+    @_serialized_stream
     def generate_stream(
         self,
         *,
@@ -705,6 +770,7 @@ class DotsTtsRuntime:
             num_steps=num_steps,
             guidance_scale=guidance_scale,
         )
+        speaker_scale = self._validate_speaker_scale(speaker_scale)
         inputs = self._prepare_inputs(
             text=text,
             prompt_audio_path=prompt_audio_path,
@@ -798,6 +864,7 @@ class DotsTtsRuntime:
             self.sample_rate,
         )
 
+    @_serialized_call
     def generate(
         self,
         *,
@@ -819,6 +886,7 @@ class DotsTtsRuntime:
             num_steps=num_steps,
             guidance_scale=guidance_scale,
         )
+        speaker_scale = self._validate_speaker_scale(speaker_scale)
         inputs = self._prepare_inputs(
             text=text,
             prompt_audio_path=prompt_audio_path,

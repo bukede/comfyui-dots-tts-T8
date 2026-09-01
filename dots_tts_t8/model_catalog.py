@@ -203,6 +203,17 @@ class ModelCatalog:
                 )
                 continue
 
+            if check_hashes and not item.sha256:
+                issues.append(
+                    ValidationIssue(
+                        item.relative_path,
+                        "missing_expected_hash",
+                        "sha256",
+                        "missing",
+                    )
+                )
+                continue
+
             if check_hashes and item.sha256:
                 actual_hash = _sha256(local_path)
                 if actual_hash.lower() != item.sha256.lower():

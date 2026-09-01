@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 _NODE_ROOT = Path(__file__).resolve().parent
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 if str(_NODE_ROOT) not in sys.path:
     # The vendored upstream uses absolute ``dots_tts`` imports.
     sys.path.insert(0, str(_NODE_ROOT))

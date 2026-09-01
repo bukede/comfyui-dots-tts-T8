@@ -53,8 +53,8 @@ def run_transcription(
         raise ValueError("启用说话人分离时必须连接 dots.tts 模型。")
     if model != DEFAULT_ASR_MODEL or aligner != DEFAULT_ALIGNER_MODEL:
         raise ValueError("ASR 只接受固定清单中的官方模型与 revision。")
-    if transport not in {"auto", "sidecar", "in_process_legacy"}:
-        raise ValueError("ASR transport 必须为 auto、sidecar 或 in_process_legacy。")
+    if transport not in {"auto", "sidecar", "in_process", "in_process_legacy"}:
+        raise ValueError("ASR transport 必须为 auto、sidecar 或 in_process。")
     with _LOCK, prompt_audio_file(audio) as path:
         selected_transport = transport
         if selected_transport == "auto":
@@ -62,7 +62,9 @@ def run_transcription(
                 sidecar_health()
                 selected_transport = "sidecar"
             except Exception:
-                selected_transport = "in_process_legacy"
+                selected_transport = "in_process"
+        elif selected_transport == "in_process_legacy":
+            selected_transport = "in_process"
         if selected_transport == "sidecar":
             try:
                 report = sidecar_transcribe(
@@ -129,7 +131,7 @@ def run_transcription(
                 speaker_similarity_threshold=float(similarity_threshold),
             )
             report = result.as_dict()
-            report["transport"] = "in_process_legacy"
+            report["transport"] = "in_process"
             return report
         finally:
             if release_after_run:

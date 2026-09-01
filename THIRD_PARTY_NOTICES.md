@@ -8,3 +8,6 @@ This distribution vendors inference source from:
 
 Official dots.tts checkpoint files are external and are not included in the
 custom-node package. Their model cards identify the checkpoints as Apache-2.0.
+
+The package depends on ffmpeg-python 0.2.x (Apache-2.0) to build controlled
+FFmpeg media graphs. It does not download or bundle an FFmpeg executable.

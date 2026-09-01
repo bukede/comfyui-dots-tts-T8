@@ -14,13 +14,28 @@ from typing import Any
 
 from .subtitles import SubtitleCue, format_srt
 
-DEFAULT_ASR_MODEL = "Qwen/Qwen3-ASR-0.6B"
-DEFAULT_ASR_REVISION = "5eb144179a02acc5e5ba31e748d22b0cf3e303b0"
-DEFAULT_ALIGNER_MODEL = "Qwen/Qwen3-ForcedAligner-0.6B"
-DEFAULT_ALIGNER_REVISION = "c7cbfc2048c462b0d63a45797104fc9db3ad62b7"
+DEFAULT_ASR_MODEL = "Qwen/Qwen3-ASR-0.6B-hf"
+DEFAULT_ASR_REVISION = "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c"
+DEFAULT_ALIGNER_MODEL = "Qwen/Qwen3-ForcedAligner-0.6B-hf"
+DEFAULT_ALIGNER_REVISION = "c07281df297b9905d24a508279258cccf987a064"
 PUNCTUATION_END = re.compile(r"[。！？!?；;…][\"'”’）)]*$")
 _SNAPSHOT_LOCK = threading.Lock()
-_VERIFIED_SNAPSHOTS: dict[tuple[str, str], str] = {}
+_VERIFIED_SNAPSHOTS: dict[
+    tuple[str, str], tuple[str, tuple[tuple[str, int, int], ...]]
+] = {}
+
+
+def _snapshot_metadata(
+    directory: Path, files: dict[str, dict[str, Any]]
+) -> tuple[tuple[str, int, int], ...]:
+    metadata: list[tuple[str, int, int]] = []
+    for relative in sorted(files):
+        path = directory / relative
+        if not path.is_file():
+            raise FileNotFoundError(f"ASR 固定版本缺少文件：{path}")
+        stat = path.stat()
+        metadata.append((relative, stat.st_size, stat.st_mtime_ns))
+    return tuple(metadata)
 
 
 def _asr_manifest_path() -> Path:
@@ -60,8 +75,13 @@ def resolve_pinned_asr_snapshot(repo_id: str, revision: str | None) -> str | Non
     key = (repo_id, revision)
     with _SNAPSHOT_LOCK:
         cached = _VERIFIED_SNAPSHOTS.get(key)
-        if cached and Path(cached).is_dir():
-            return cached
+        if cached and Path(cached[0]).is_dir():
+            try:
+                current_metadata = _snapshot_metadata(Path(cached[0]), entry["files"])
+            except FileNotFoundError:
+                current_metadata = ()
+            if current_metadata == cached[1]:
+                return cached[0]
         from huggingface_hub import snapshot_download
 
         directory = Path(
@@ -79,7 +99,10 @@ def resolve_pinned_asr_snapshot(repo_id: str, revision: str | None) -> str | Non
                 raise RuntimeError(f"ASR 文件大小校验失败：{path}")
             if _file_sha256(path) != str(expected["sha256"]).lower():
                 raise RuntimeError(f"ASR 文件 SHA-256 校验失败：{path}")
-        _VERIFIED_SNAPSHOTS[key] = str(directory)
+        _VERIFIED_SNAPSHOTS[key] = (
+            str(directory),
+            _snapshot_metadata(directory, entry["files"]),
+        )
         return str(directory)
 
 
@@ -391,11 +414,15 @@ class QwenAsrEngine:
             return self._model
         try:
             import torch
-            from qwen_asr import Qwen3ASRModel
+            from transformers import (
+                AutoModelForMultimodalLM,
+                AutoModelForTokenClassification,
+                AutoProcessor,
+            )
         except ImportError as exc:
             raise RuntimeError(
-                "ASR 组件未安装；Windows 整合包请重新运行环境准备脚本，"
-                "ComfyUI 用户需手动安装 qwen-asr==0.0.6。"
+                "ASR 组件需要 Transformers 5.5 或更高版本；Windows 整合包"
+                "请重新运行环境准备脚本。"
             ) from exc
         model_source = (
             resolve_pinned_asr_snapshot(self.model_name_or_path, self.model_revision)
@@ -408,28 +435,51 @@ class QwenAsrEngine:
             if self.aligner_name_or_path
             else None
         ) or self.aligner_name_or_path
-        kwargs: dict[str, Any] = {
+        model_kwargs: dict[str, Any] = {
             "dtype": torch.float32,
             "device_map": self.device,
-            "max_inference_batch_size": 1,
-            "max_new_tokens": self.max_new_tokens,
+            "local_files_only": Path(model_source).is_dir(),
         }
         revision = self._remote_revision(model_source, self.model_revision)
         if revision:
-            kwargs["revision"] = revision
+            model_kwargs["revision"] = revision
+        processor = AutoProcessor.from_pretrained(
+            model_source,
+            revision=revision,
+            local_files_only=Path(model_source).is_dir(),
+        )
+        model = AutoModelForMultimodalLM.from_pretrained(
+            model_source,
+            **model_kwargs,
+        ).eval()
+        aligner_processor = None
+        aligner_model = None
         if aligner_source:
-            kwargs["forced_aligner"] = aligner_source
             aligner_kwargs: dict[str, Any] = {
                 "dtype": torch.float32,
                 "device_map": self.device,
+                "local_files_only": Path(aligner_source).is_dir(),
             }
             aligner_revision = self._remote_revision(
                 aligner_source, self.aligner_revision
             )
             if aligner_revision:
                 aligner_kwargs["revision"] = aligner_revision
-            kwargs["forced_aligner_kwargs"] = aligner_kwargs
-        self._model = Qwen3ASRModel.from_pretrained(model_source, **kwargs)
+            aligner_processor = AutoProcessor.from_pretrained(
+                aligner_source,
+                revision=aligner_revision,
+                local_files_only=Path(aligner_source).is_dir(),
+            )
+            aligner_model = AutoModelForTokenClassification.from_pretrained(
+                aligner_source,
+                **aligner_kwargs,
+            ).eval()
+        self._model = {
+            "processor": processor,
+            "model": model,
+            "aligner_processor": aligner_processor,
+            "aligner_model": aligner_model,
+        }
         return self._model
 
     def transcribe(
@@ -447,24 +497,55 @@ class QwenAsrEngine:
         source = Path(audio_path).expanduser().resolve()
         if not source.is_file():
             raise FileNotFoundError(f"ASR 音频不存在：{source}")
-        raw = self._load().transcribe(
+        import torch
+
+        loaded = self._load()
+        processor = loaded["processor"]
+        model = loaded["model"]
+        inputs = processor.apply_transcription_request(
             audio=str(source),
             language=(str(language).strip() or None) if language else None,
-            return_time_stamps=bool(self.aligner_name_or_path),
-        )[0]
-        text = str(raw.text).strip()
+        ).to(model.device, model.dtype)
+        with torch.inference_mode():
+            output_ids = model.generate(**inputs, max_new_tokens=self.max_new_tokens)
+        generated_ids = output_ids[:, inputs["input_ids"].shape[1] :]
+        parsed = processor.decode(generated_ids, return_format="parsed")[0]
+        text = str(parsed.get("transcription", "")).strip()
         if not text:
             raise ValueError("ASR 没有识别到语音。")
         tokens: list[TimedToken] = []
-        for item in raw.time_stamps or []:
-            value = item if isinstance(item, dict) else vars(item)
-            tokens.append(
-                TimedToken(
-                    text=str(value.get("text", "")),
-                    start_ms=max(0, round(float(value.get("start_time", 0)) * 1000)),
-                    end_ms=max(0, round(float(value.get("end_time", 0)) * 1000)),
-                )
+        detected_language = str(parsed.get("language", "")).strip()
+        aligner_processor = loaded["aligner_processor"]
+        aligner_model = loaded["aligner_model"]
+        if aligner_processor is not None and aligner_model is not None:
+            aligner_inputs, word_lists = aligner_processor.prepare_forced_aligner_inputs(
+                audio=str(source),
+                transcript=text,
+                language=detected_language or language or "English",
             )
+            aligner_inputs = aligner_inputs.to(
+                aligner_model.device, aligner_model.dtype
+            )
+            with torch.inference_mode():
+                aligner_output = aligner_model(**aligner_inputs)
+            timestamps = aligner_processor.decode_forced_alignment(
+                logits=aligner_output.logits,
+                input_ids=aligner_inputs["input_ids"],
+                word_lists=word_lists,
+                timestamp_token_id=aligner_model.config.timestamp_token_id,
+            )[0]
+            for value in timestamps:
+                tokens.append(
+                    TimedToken(
+                        text=str(value.get("text", "")),
+                        start_ms=max(
+                            0, round(float(value.get("start_time", 0)) * 1000)
+                        ),
+                        end_ms=max(
+                            0, round(float(value.get("end_time", 0)) * 1000)
+                        ),
+                    )
+                )
         segments = group_timed_tokens(tokens)
         if not segments:
             info = sf.info(source)
@@ -482,7 +563,7 @@ class QwenAsrEngine:
             )
         return TranscriptionResult(
             text=text,
-            language=str(raw.language).strip(),
+            language=detected_language,
             segments=segments,
             model=self.model_name_or_path,
             model_revision=self._remote_revision(

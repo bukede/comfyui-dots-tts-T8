@@ -116,8 +116,8 @@ class StreamingConfig(StrictConfigBase):
 
 class ModelConfig(ConfigBase):
     model_type: str = "dots_tts"
-    latent_dim: int
-    patch_size: int
+    latent_dim: int = Field(gt=0)
+    patch_size: int = Field(gt=0)
     cfg_droprate: float = 0.2
     PatchEncoder: _EncoderConfig
     DiT: _DiTConfig

@@ -16,7 +16,13 @@ from dots_tts.data.edit_instruction import (
 )
 from dots_tts.data.pipelines.tokenizing import build_edit_generation_schedule
 from dots_tts.models.dots_tts.edit_model import DotsTtsEditModel
-from dots_tts.runtime import DEFAULT_MAX_SEQUENCE_LENGTH, DotsTtsRuntime, RuntimeInputs
+from dots_tts.runtime import (
+    DEFAULT_MAX_SEQUENCE_LENGTH,
+    DotsTtsRuntime,
+    RuntimeInputs,
+    _serialized_call,
+    _serialized_stream,
+)
 from dots_tts.utils.audio import prepare_edit_source_audio
 from dots_tts.utils.logging import categorized_log as logc
 from dots_tts.utils.profiling import (
@@ -458,6 +464,7 @@ class DotsTtsEditRuntime(DotsTtsRuntime):
         )
         return inputs
 
+    @_serialized_stream
     def generate_stream(
         self,
         *,
@@ -497,6 +504,7 @@ class DotsTtsEditRuntime(DotsTtsRuntime):
             num_steps=num_steps,
             guidance_scale=guidance_scale,
         )
+        speaker_scale = self._validate_speaker_scale(speaker_scale)
         inputs = self._prepare_audio_fill_tts_inputs(
             text=text,
             prompt_audio_path=prompt_audio_path,
@@ -591,6 +599,7 @@ class DotsTtsEditRuntime(DotsTtsRuntime):
             self.sample_rate,
         )
 
+    @_serialized_call
     def generate(
         self,
         *,
@@ -629,6 +638,7 @@ class DotsTtsEditRuntime(DotsTtsRuntime):
             num_steps=num_steps,
             guidance_scale=guidance_scale,
         )
+        speaker_scale = self._validate_speaker_scale(speaker_scale)
         inputs = self._prepare_audio_fill_tts_inputs(
             text=text,
             prompt_audio_path=prompt_audio_path,
@@ -714,6 +724,7 @@ class DotsTtsEditRuntime(DotsTtsRuntime):
             "profiling": profiling,
         }
 
+    @_serialized_call
     def generate_edit(
         self,
         *,
@@ -734,6 +745,7 @@ class DotsTtsEditRuntime(DotsTtsRuntime):
             num_steps=num_steps,
             guidance_scale=guidance_scale,
         )
+        speaker_scale = self._validate_speaker_scale(speaker_scale)
         inputs = self._prepare_edit_inputs(
             source_audio_path=source_audio_path,
             instruction=instruction,

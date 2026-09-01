@@ -388,7 +388,37 @@ class DotsTtsModel(nn.Module):
 
     @staticmethod
     def _load_llm_config(path: Path) -> Qwen2Config:
-        return Qwen2Config.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("llm_config.json must contain a JSON object.")
+        denied = {
+            "_attn_implementation",
+            "_attn_implementation_internal",
+            "_attn_implementation_autoset",
+            "attn_implementation",
+            "auto_map",
+            "custom_pipelines",
+        }
+        unsafe = sorted(
+            key
+            for key in payload
+            if key in denied
+            or (key.startswith("_") and key != "_name_or_path")
+            or "kernel" in key.lower()
+        )
+        if unsafe:
+            raise ValueError(
+                "llm_config.json contains executable or reserved fields: "
+                + ", ".join(unsafe)
+            )
+        if payload.get("model_type") not in {None, "qwen2"}:
+            raise ValueError("llm_config.json model_type must be qwen2.")
+        architectures = payload.get("architectures")
+        if architectures is not None and architectures != ["Qwen2ForCausalLM"]:
+            raise ValueError(
+                "llm_config.json architectures must be Qwen2ForCausalLM."
+            )
+        return Qwen2Config.from_dict(payload)
 
     def _tie_llm_weights(self) -> None:
         if hasattr(self.core.llm, "tie_weights"):
@@ -461,6 +491,14 @@ class DotsTtsModel(nn.Module):
         self._load_pretrained_artifacts(pretrained_path)
 
     @classmethod
+    def _load_tokenizer(cls, pretrained_path: Path):
+        return AutoTokenizer.from_pretrained(
+            str(pretrained_path),
+            local_files_only=True,
+            fix_mistral_regex=False,
+        )
+
+    @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str | Path):
         logger.debug(
             logc("model", "DotsTtsModel load started: pretrained_path={}"),
@@ -482,10 +520,7 @@ class DotsTtsModel(nn.Module):
             config.vocoder.sample_rate,
             config.patch_size,
         )
-        tokenizer = AutoTokenizer.from_pretrained(
-            str(pretrained_model_name_or_path),
-            local_files_only=True,
-        )
+        tokenizer = cls._load_tokenizer(pretrained_model_name_or_path)
         model = cls(
             config,
             tokenizer=tokenizer,

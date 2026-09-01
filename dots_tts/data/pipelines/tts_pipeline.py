@@ -3,7 +3,6 @@ from __future__ import annotations
 import soundfile as sf
 import torch
 
-from dots_tts.utils.profiling import ensure_data_profiler
 from dots_tts.data.pipelines.base import BaseSamplePipeline
 from dots_tts.data.pipelines.preprocessing import (
     compute_num_audio_tokens,
@@ -13,6 +12,7 @@ from dots_tts.data.pipelines.preprocessing import (
 from dots_tts.data.pipelines.tokenizing import build_tokenized_example
 from dots_tts.modules.speaker.fbank import extract_speaker_fbank
 from dots_tts.utils.audio import high_quality_resample
+from dots_tts.utils.profiling import ensure_data_profiler
 
 TTS_TEXT_PREFIX = "[文本]"
 TTS_AUDIO_PREFIX = "[文本对应语音]"

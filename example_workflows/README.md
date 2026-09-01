@@ -32,8 +32,8 @@ v0.4 默认用 `shrink` 对超出字幕槽位的语音做保音高变速，并�
 `retry_failed_only` 设为 `true` 后，只会重跑原 manifest 中失败的项目，并校验配置
 指纹。
 
-v0.5 的 ASR 示例需要手动安装 `qwen-asr==0.0.6` 与
-`transformers==4.57.6`。首次运行会下载约 3.7 GB 固定 revision 权重并校验大小与
+当前 ASR 示例使用 Transformers 5 原生实现，需要手动安装
+`transformers>=5.5,<6`。首次运行会下载约 3.4 GB 固定 revision 权重并校验大小与
 SHA-256；启用说话人分离时还需连接 dots.tts 模型加载器。
 
 v0.6 的语音编辑示例需要把官方 `dots.tts.edit` 放到

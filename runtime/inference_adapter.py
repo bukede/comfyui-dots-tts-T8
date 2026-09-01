@@ -64,10 +64,11 @@ def _resolve_inference(
         max_generate_length=selected.max_generate_length,
         warmup_on_optimize=handle.optimize,
         runtime_kind=artifact.runtime,
+        content_fingerprint=handle.content_fingerprint,
     )
     resolved_language = language
-    if resolved_language == "inherit" and voice is not None:
-        resolved_language = voice.language
+    if resolved_language == "inherit":
+        resolved_language = voice.language if voice is not None else None
     if resolved_language == "none":
         resolved_language = None
 
@@ -136,40 +137,42 @@ def run_inference(
     ) = _resolve_inference(handle, language, voice, sampling)
 
     with _LOCK:
-        prompt_context = (
-            nullcontext(None) if voice is None else prompt_audio_file(voice.audio)
-        )
-        with prompt_context as path:
-            result = _generate_once(
-                spec=spec,
-                text=text,
-                language=resolved_language,
-                seed=seed,
-                prompt_audio_path=str(path) if path is not None else None,
-                prompt_text=voice.transcript or None if voice is not None else None,
-                selected=selected,
-                ode_method=ode_method,
-                num_steps=num_steps,
-                guidance_scale=guidance_scale,
+        try:
+            prompt_context = (
+                nullcontext(None) if voice is None else prompt_audio_file(voice.audio)
             )
+            with prompt_context as path:
+                result = _generate_once(
+                    spec=spec,
+                    text=text,
+                    language=resolved_language,
+                    seed=seed,
+                    prompt_audio_path=str(path) if path is not None else None,
+                    prompt_text=voice.transcript or None if voice is not None else None,
+                    selected=selected,
+                    ode_method=ode_method,
+                    num_steps=num_steps,
+                    guidance_scale=guidance_scale,
+                )
 
-        audio = normalize_output_audio(result["audio"], result["sample_rate"])
-        info = {
-            "model": artifact.repo_id,
-            "model_key": artifact.key,
-            "seed": int(seed),
-            "language": resolved_language,
-            "mode": _mode(voice),
-            "sample_rate": int(result["sample_rate"]),
-            "samples": int(audio["waveform"].shape[-1]),
-            "sampling_locked": artifact.sampling.locked,
-            "ode_method": ode_method,
-            "num_steps": num_steps,
-            "guidance_scale": guidance_scale,
-        }
-        if handle.release_after_run:
-            _MANAGER.release()
-        return audio, info
+            audio = normalize_output_audio(result["audio"], result["sample_rate"])
+            info = {
+                "model": artifact.repo_id,
+                "model_key": artifact.key,
+                "seed": int(seed),
+                "language": resolved_language,
+                "mode": _mode(voice),
+                "sample_rate": int(result["sample_rate"]),
+                "samples": int(audio["waveform"].shape[-1]),
+                "sampling_locked": artifact.sampling.locked,
+                "ode_method": ode_method,
+                "num_steps": num_steps,
+                "guidance_scale": guidance_scale,
+            }
+            return audio, info
+        finally:
+            if handle.release_after_run:
+                _MANAGER.release()
 
 
 def run_edit_inference(
@@ -206,6 +209,7 @@ def run_edit_inference(
         max_generate_length=int(max_generate_length),
         warmup_on_optimize=handle.optimize,
         runtime_kind="edit",
+        content_fingerprint=handle.content_fingerprint,
     )
     with _LOCK, edit_source_audio_file(source_audio) as source_path:
         try:
@@ -375,8 +379,8 @@ def _project_audio(path: str | Path) -> dict:
 
 def _resolve_segment_language(language: str, voice: VoicePrompt | None) -> str | None:
     resolved: str | None = language
-    if resolved == "inherit" and voice is not None:
-        resolved = voice.language
+    if resolved == "inherit":
+        resolved = voice.language if voice is not None else None
     if resolved == "none":
         return None
     return resolved
@@ -407,7 +411,7 @@ def _production_generator(
     ) = _resolve_inference(handle, language, reference_voice, sampling)
 
     with _LOCK:
-        runtime = _MANAGER.load(spec)
+        runtime_holder: list[Any | None] = [None]
         with (
             ExitStack() as stack,
             tempfile.TemporaryDirectory(prefix="dots-tts-t8-project-") as temporary,
@@ -420,6 +424,10 @@ def _production_generator(
             temporary_root = Path(temporary)
 
             def generate(segment, _profile, segment_seed):
+                runtime = runtime_holder[0]
+                if runtime is None:
+                    runtime = _MANAGER.load(spec)
+                    runtime_holder[0] = runtime
                 voice = voices.get(segment.speaker or "", fallback)
                 speech_plan = plan_speech(
                     segment.text,

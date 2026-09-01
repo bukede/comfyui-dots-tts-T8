@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 - 2026-09-01
+
+- Removed the direct subprocess call from media export and restricted FFmpeg to trusted bundled or PATH executables.
+- Migrated optional ASR to pinned native Transformers 5 models and removed the vulnerable legacy qwen-asr dependency.
+- Fixed language inheritance without a voice prompt, release-on-error, lazy resume loading, and model cache invalidation.
+- Rejected unsafe external prompt/output/model paths and malformed, non-finite, empty, or batched audio inputs.
+- Added safe latent-stat loading, serialized runtime calls, strict sampling validation, and current ComfyUI V3 CI coverage.
+- Made the model release node an output sink and expanded security and regression tests.
+
 ## 0.6.0 - 2026-08-24
 
 - Added dedicated dots.tts.edit model loader and instruction-controlled speech editing node.

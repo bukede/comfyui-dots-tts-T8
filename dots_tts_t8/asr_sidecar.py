@@ -107,7 +107,13 @@ def sidecar_transcribe(
 
 def sidecar_release(path: str | Path = DISCOVERY_PATH) -> bool:
     return bool(
-        _request(read_discovery(path), "POST", "/v1/release", data=b"").get("released")
+        _request(
+            read_discovery(path),
+            "POST",
+            "/v1/release",
+            data=b"",
+            timeout=10,
+        ).get("released")
     )
 
 

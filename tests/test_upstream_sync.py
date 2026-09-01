@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -8,6 +9,31 @@ import pytest
 NODE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = NODE_ROOT.parent
 INTENTIONAL_T8_DIVERGENCES = {Path("asr_sidecar.py")}
+
+
+def _tree_digest(root: Path) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    files = sorted(path for path in root.rglob("*.py") if path.is_file())
+    for path in files:
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        normalized = path.read_bytes().replace(b"\r\n", b"\n")
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(normalized).digest())
+    return len(files), digest.hexdigest()
+
+
+def test_vendored_integrity_matches_release_baseline() -> None:
+    baseline = json.loads(
+        (NODE_ROOT / "T8_UPSTREAM_BASELINE.json").read_text(encoding="utf-8")
+    )
+    expected = baseline["vendored_integrity"]
+    dots_count, dots_digest = _tree_digest(NODE_ROOT / "dots_tts")
+    helpers_count, helpers_digest = _tree_digest(NODE_ROOT / "dots_tts_t8")
+    assert dots_count == expected["dots_tts_python_files"]
+    assert dots_digest == expected["dots_tts_python_sha256"]
+    assert helpers_count == expected["dots_tts_t8_python_files"]
+    assert helpers_digest == expected["dots_tts_t8_python_sha256"]
 
 
 def test_vendored_upstream_matches_pinned_source() -> None:

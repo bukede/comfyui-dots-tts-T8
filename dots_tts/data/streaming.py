@@ -8,8 +8,8 @@ from copy import deepcopy
 from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 
 from dots_tts.data.batchers import OnlineBatcher
-from dots_tts.utils.profiling import ensure_data_profiler
 from dots_tts.data.source_adapters.base_adapter import BaseSourceAdapter, SourceContext
+from dots_tts.utils.profiling import ensure_data_profiler
 
 _TRACKING_KEY = "__tracking_state__"
 _RESUME_TOPOLOGY_KEY = "resume_topology"

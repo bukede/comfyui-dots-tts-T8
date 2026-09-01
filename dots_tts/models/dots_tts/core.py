@@ -2,6 +2,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Callable
 
+import numpy as np
 import torch
 import torch.nn as nn
 from einops import rearrange
@@ -20,6 +21,11 @@ from dots_tts.utils.tokenizer import (
     require_token_id,
 )
 from dots_tts.utils.util import get_mask_from_lengths, mask_data
+
+try:
+    from numpy._core.multiarray import _reconstruct as _numpy_reconstruct
+except ImportError:  # NumPy < 2.0
+    from numpy.core.multiarray import _reconstruct as _numpy_reconstruct
 
 
 @dataclass(frozen=True)
@@ -717,9 +723,49 @@ class CausalHelper:
 class IOHelper:
     def __init__(self, latent_stats_path=None):
         if latent_stats_path is not None:
-            latent_stats = torch.load(latent_stats_path, weights_only=False)
+            safe_globals = [
+                (
+                    _numpy_reconstruct,
+                    "numpy._core.multiarray._reconstruct",
+                ),
+                (
+                    _numpy_reconstruct,
+                    "numpy.core.multiarray._reconstruct",
+                ),
+                (np.ndarray, "numpy.ndarray"),
+                (np.dtype, "numpy.dtype"),
+                type(np.dtype(np.float32)),
+            ]
+            with torch.serialization.safe_globals(safe_globals):
+                latent_stats = torch.load(
+                    latent_stats_path,
+                    map_location="cpu",
+                    weights_only=True,
+                )
+            if not isinstance(latent_stats, dict) or set(latent_stats) != {
+                "mean",
+                "var",
+            }:
+                raise ValueError("latent_stats.pt must contain only mean and var.")
+            if not all(
+                isinstance(latent_stats[name], (np.ndarray, torch.Tensor))
+                for name in ("mean", "var")
+            ):
+                raise TypeError("latent_stats mean and var must be arrays or tensors.")
             self.global_mean = torch.as_tensor(latent_stats["mean"])
             self.global_var = torch.as_tensor(latent_stats["var"])
+            if (
+                self.global_mean.ndim != 1
+                or self.global_mean.numel() == 0
+                or self.global_mean.shape != self.global_var.shape
+            ):
+                raise ValueError("latent_stats mean and var must be matching 1-D arrays.")
+            if not torch.isfinite(self.global_mean).all() or not torch.isfinite(
+                self.global_var
+            ).all():
+                raise ValueError("latent_stats mean and var must contain finite values.")
+            if not torch.all(self.global_var > 0):
+                raise ValueError("latent_stats var must contain only positive values.")
         else:
             self.global_mean = None
             self.global_var = None

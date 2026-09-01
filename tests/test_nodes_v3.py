@@ -104,6 +104,12 @@ def test_asr_and_timeline_are_executable_text_output_nodes() -> None:
     assert isinstance(module.T8DotsTTSTranscribe.validate_inputs(0, 0.72, True), str)
 
 
+def test_release_node_is_an_output_sink() -> None:
+    module = _load_nodes_module()
+
+    assert module.T8DotsTTSRelease.define_schema().is_output_node is True
+
+
 def test_long_text_uses_standard_audio_output_and_validates_controls() -> None:
     module = _load_nodes_module()
     schema = module.T8DotsTTSLongText.define_schema()
@@ -181,10 +187,13 @@ def test_speaker_map_and_pronunciation_helpers() -> None:
     assert processed[0] == "二零二六 年"
 
 
-def test_speaker_map_loads_unlimited_file_voice_library(tmp_path: Path) -> None:
+def test_speaker_map_loads_unlimited_file_voice_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     np = pytest.importorskip("numpy")
     sf = pytest.importorskip("soundfile")
     module = _load_nodes_module()
+    monkeypatch.setattr(module, "_comfy_directory", lambda _kind: None)
     voices = {}
     for index in range(6):
         audio_path = tmp_path / f"voice-{index}.wav"

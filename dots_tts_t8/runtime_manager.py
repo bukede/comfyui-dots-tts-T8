@@ -20,6 +20,7 @@ class RuntimeSpec:
     max_sequence_length: int = 2048
     warmup_on_optimize: bool = True
     runtime_kind: str = "tts"
+    content_fingerprint: str = ""
 
     def normalized(self) -> "RuntimeSpec":
         model = self.model_name_or_path.strip()
@@ -39,6 +40,7 @@ class RuntimeSpec:
             max_sequence_length=int(self.max_sequence_length),
             warmup_on_optimize=bool(self.warmup_on_optimize),
             runtime_kind=runtime_kind,
+            content_fingerprint=self.content_fingerprint.strip(),
         )
 
 
