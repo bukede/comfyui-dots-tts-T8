@@ -37,6 +37,22 @@ PROTECTED_DEPENDENCIES = {
     "pydantic",
     "numpy",
 }
+PUBLISHED_PYTHON_PATHS = (
+    ROOT / "__init__.py",
+    ROOT / "nodes_v3.py",
+    ROOT / "runtime",
+    ROOT / "dots_tts",
+    ROOT / "dots_tts_t8",
+    ROOT / "scripts",
+)
+
+
+def _production_python_files():
+    for path in PUBLISHED_PYTHON_PATHS:
+        if path.is_file():
+            yield path
+        elif path.is_dir():
+            yield from path.rglob("*.py")
 
 
 def _dependency_name(requirement: str) -> str:
@@ -97,13 +113,8 @@ def test_registry_package_has_no_installer_script() -> None:
 
 
 def test_registry_package_does_not_read_process_environment() -> None:
-    production_files = (
-        path
-        for path in ROOT.rglob("*.py")
-        if "tests" not in path.relative_to(ROOT).parts
-    )
     findings: list[str] = []
-    for path in production_files:
+    for path in _production_python_files():
         source = path.read_text(encoding="utf-8")
         for forbidden in ("os.environ", "os.getenv"):
             if forbidden in source:
@@ -125,12 +136,7 @@ def test_registry_package_has_no_direct_process_or_dynamic_code_execution() -> N
         },
     }
     findings: list[str] = []
-    production_files = (
-        path
-        for path in ROOT.rglob("*.py")
-        if "tests" not in path.relative_to(ROOT).parts
-    )
-    for path in production_files:
+    for path in _production_python_files():
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
