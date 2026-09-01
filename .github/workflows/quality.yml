@@ -34,10 +34,10 @@ jobs:
       - name: Install test-only dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "pytest>=9.0.3,<10" "ruff>=0.15,<0.16" -r requirements.txt
-          python -m pip install "torch==2.8.0" --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install "pytest>=9.0.3,<10" "ruff>=0.15,<0.16" "numpy==${{ matrix.numpy-version }}" "scipy==1.15.3" "librosa==0.11.0" -r requirements.txt
+          python -m pip install "torch==2.8.0" "torchaudio==2.8.0" --index-url https://download.pytorch.org/whl/cpu
           python -m pip install "transformers==5.16.1" "huggingface-hub==1.29.0" "tokenizers==0.23.1" "safetensors==0.8.0"
-          python -m pip install "numpy==${{ matrix.numpy-version }}" "av==17.0.0" "comfy-aimdo==0.4.15" "pydantic==2.12.5" "pillow==11.3.0"
+          python -m pip install "av==17.0.0" "comfy-aimdo==0.4.15" "pydantic==2.12.5" "pillow==11.3.0"
           python -m pip check
       - name: Run all tests and require real ComfyUI schema coverage
         env:
