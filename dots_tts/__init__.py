@@ -32,7 +32,15 @@ def _check_torch_install() -> None:
 
     torch_minor = tuple(torch_version.split("+")[0].split(".")[:2])
     torchaudio_minor = tuple(torchaudio_version.split("+")[0].split(".")[:2])
-    if torch_minor != torchaudio_minor:
+    # comfyui-h3 patch 001: torchaudio stopped at 2.11 (no 2.12/2.13 wheels); the
+    # production lock pairs torch 2.13 with torchaudio 2.11 and dots.tts only uses
+    # its pure-torch ops (functional.resample, transforms.Resample, compliance.kaldi).
+    # Allow an older torchaudio at minor >= 11 instead of refusing to import.
+    if torch_minor != torchaudio_minor and not (
+        torch_minor[0] == torchaudio_minor[0] == "2"
+        and int(torchaudio_minor[1]) >= 11
+        and int(torch_minor[1]) > int(torchaudio_minor[1])
+    ):
         raise RuntimeError(
             f"torch ({torch_version}) and torchaudio ({torchaudio_version}) "
             f"minor versions do not match.\n{_install_hint}"
